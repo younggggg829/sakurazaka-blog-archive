@@ -1,0 +1,29 @@
+{
+  "name": "sakurazaka-blog-archive",
+  "version": "1.0.0",
+  "description": "櫻坂46・欅坂46ブログアーカイブツール - Blog scraping and archiving tool for Sakurazaka46 and Keyakizaka46",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "chalk": "^4.1.2",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.2.3",
+    "ejs": "^3.1.10",
+    "express": "^5.1.0",
+    "express-session": "^1.18.2",
+    "google-auth-library": "^10.4.1",
+    "googleapis": "^164.1.0",
+    "inquirer": "^12.10.0",
+    "open": "^10.2.0",
+    "playwright": "^1.56.1",
+    "sqlite3": "^5.1.7"
+  }
+}

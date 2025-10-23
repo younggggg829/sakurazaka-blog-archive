@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🌸 <%= member.name %>のブログ</h1>
+      <nav>
+        <a href="/">ホーム</a>
+        <a href="/search">検索</a>
+      </nav>
+    </header>
+
+    <main>
+      <div class="blog-list">
+        <h2>ブログ記事一覧 (<%= posts.length %>件)</h2>
+
+        <% if (posts.length === 0) { %>
+          <p>まだブログ記事がありません。</p>
+        <% } else { %>
+          <% posts.forEach(post => { %>
+            <article class="blog-item">
+              <a href="/post/<%= post.id %>">
+                <div class="blog-header">
+                  <h3><%= post.title || 'タイトルなし' %></h3>
+                  <span class="date"><%= post.date %></span>
+                </div>
+                <div class="blog-preview">
+                  <% if (post.content) { %>
+                    <% const cleanContent = post.content.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim(); %>
+                    <%= cleanContent.substring(0, 150) + (cleanContent.length > 150 ? '...' : '') %>
+                  <% } %>
+                </div>
+                <div class="blog-meta">
+                  <span>画像: <%= post.images ? post.images.length : 0 %>枚</span>
+                  <span class="read-more">続きを読む →</span>
+                </div>
+              </a>
+            </article>
+          <% }) %>
+        <% } %>
+      </div>
+    </main>
+
+    <footer>
+      <p>&copy; 2025 櫻坂46 ブログアーカイブ</p>
+    </footer>
+  </div>
+</body>
+</html>

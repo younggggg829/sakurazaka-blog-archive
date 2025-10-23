@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>🌸 櫻坂46 ブログアーカイブ</h1>
+        <nav>
+          <a href="/">ホーム</a>
+          <a href="/member/<%= post.member_id %>"
+            >← <%= post.member_name %>の記事一覧</a
+          >
+          <a href="/search">検索</a>
+        </nav>
+      </header>
+
+      <main>
+        <article class="blog-post">
+          <div class="post-header">
+            <h1><%= post.title || 'タイトルなし' %></h1>
+            <div class="post-meta">
+              <span class="author">✍️ <%= post.member_name %></span>
+              <span class="date">📅 <%= post.date %></span>
+              <a
+                href="<%= post.url %>"
+                target="_blank"
+                class="original-link-header"
+              >
+                🔗 公式サイトで見る
+              </a>
+            </div>
+          </div>
+
+          <div class="post-content">
+            <% if (post.content && post.content.includes('<')) { %>
+            <!-- HTMLコンテンツの画像パスを自動変換して表示 -->
+            <%- (post.content || '').replace(/src="\/([^"]+)"/g, function(match, path) {
+              if (path.startsWith('http')) return match;
+              return 'src="https://sakurazaka46.com/' + path + '"';
+            }) %>
+            <% } else { %>
+            <!-- テキストコンテンツを改行対応で表示 -->
+            <%- (post.content || '').replace(/\n/g, '<br />') %>
+            <% } %>
+          </div>
+
+          <div class="post-footer">
+            <div class="saved-date">保存日時: <%= post.created_at %></div>
+          </div>
+        </article>
+      </main>
+
+      <footer>
+        <p>&copy; 2025 櫻坂46 ブログアーカイブ</p>
+      </footer>
+    </div>
+  </body>
+</html>

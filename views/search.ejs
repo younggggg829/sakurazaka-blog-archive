@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🌸 櫻坂46 ブログアーカイブ</h1>
+      <nav>
+        <a href="/">ホーム</a>
+        <a href="/search">検索</a>
+      </nav>
+    </header>
+
+    <main>
+      <div class="search-section">
+        <h2>🔍 ブログ記事検索</h2>
+        <form action="/search" method="get" class="search-form">
+          <input
+            type="text"
+            name="q"
+            value="<%= keyword %>"
+            placeholder="キーワードを入力..."
+            class="search-input"
+          >
+          <button type="submit" class="search-button">検索</button>
+        </form>
+      </div>
+
+      <% if (keyword) { %>
+        <div class="search-results">
+          <h3>「<%= keyword %>」の検索結果: <%= posts.length %>件</h3>
+
+          <% if (posts.length === 0) { %>
+            <p>該当する記事が見つかりませんでした。</p>
+          <% } else { %>
+            <% posts.forEach(post => { %>
+              <article class="blog-item">
+                <a href="/post/<%= post.id %>">
+                  <div class="blog-header">
+                    <h4><%= post.title || 'タイトルなし' %></h4>
+                    <div class="blog-info">
+                      <span class="author"><%= post.member_name %></span>
+                      <span class="date"><%= post.date %></span>
+                    </div>
+                  </div>
+                  <div class="blog-preview">
+                    <%= post.content ? post.content.substring(0, 200) + '...' : '' %>
+                  </div>
+                </a>
+              </article>
+            <% }) %>
+          <% } %>
+        </div>
+      <% } %>
+    </main>
+
+    <footer>
+      <p>&copy; 2025 櫻坂46 ブログアーカイブ</p>
+    </footer>
+  </div>
+</body>
+</html>

@@ -1,0 +1,590 @@
+<%
+  // Helper function to build query string
+  function getQueryString(overrides) {
+    const params = new URLSearchParams();
+    if (req.query.q) params.set('q', req.query.q);
+    if (req.query.title_search) params.set('title_search', req.query.title_search);
+    if (req.query.member) params.set('member', req.query.member);
+    if (req.query.sort) params.set('sort', req.query.sort);
+    if (req.query.date_from) params.set('date_from', req.query.date_from);
+    if (req.query.date_to) params.set('date_to', req.query.date_to);
+    if (req.query.per_page) params.set('per_page', req.query.per_page);
+    if (req.query.members) {
+      const memberArr = Array.isArray(req.query.members) ? req.query.members : [req.query.members];
+      memberArr.forEach(m => params.append('members[]', m));
+    }
+    // Apply overrides
+    if (overrides) {
+      Object.keys(overrides).forEach(key => {
+        if (overrides[key] !== undefined) {
+          params.set(key, overrides[key]);
+        }
+      });
+    }
+    return params.toString();
+  }
+%>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🌸 櫻坂46 ブログアーカイブ</h1>
+      <nav>
+        <a href="/">ホーム</a>
+        <a href="/members">メンバー一覧</a>
+      </nav>
+    </header>
+
+    <main>
+      <!-- 検索セクション -->
+      <div class="search-hero">
+        <div class="search-header">
+          <h2>ブログ記事を検索</h2>
+          <button onclick="toggleAdvancedSearch()" class="advanced-search-btn" id="advanced-search-btn">⚙️ 詳細検索</button>
+        </div>
+
+        <form action="/" method="get" class="search-form-main" id="search-form">
+          <!-- 基本検索 -->
+          <div class="basic-search">
+            <div class="search-inputs-row">
+              <input
+                type="text"
+                name="q"
+                value="<%= keyword %>"
+                placeholder="本文内キーワードを入力..."
+                class="search-input-main"
+                autofocus
+              >
+              <input
+                type="text"
+                name="title_search"
+                value="<%= (req.query && req.query.title_search) ? req.query.title_search : '' %>"
+                placeholder="タイトル検索..."
+                class="search-input-main"
+              >
+              <select name="member" class="member-select">
+                <option value="">全メンバー</option>
+                <% members.forEach(member => { %>
+                  <option value="<%= member.id %>" <%= (req.query && req.query.member == member.id) ? 'selected' : '' %>><%= member.name %></option>
+                <% }) %>
+              </select>
+              <button type="submit" class="search-button-main">🔍 検索</button>
+            </div>
+          </div>
+
+          <!-- 詳細検索（初期状態では非表示） -->
+          <div class="advanced-search" id="advanced-search" style="display:none;">
+            <div class="search-section">
+              <h4>表示設定</h4>
+              <div class="search-row">
+                <label>並び順:</label>
+                <input type="radio" name="sort" value="desc" id="sort-desc" <%= (!req.query || !req.query.sort || req.query.sort === 'desc') ? 'checked' : '' %>>
+                <label for="sort-desc">新しい順</label>
+                <input type="radio" name="sort" value="asc" id="sort-asc" <%= (req.query && req.query.sort === 'asc') ? 'checked' : '' %>>
+                <label for="sort-asc">古い順</label>
+              </div>
+            </div>
+
+            <div class="search-section">
+              <h4>メンバー選択（複数選択可）</h4>
+              <div class="member-checkboxes-compact">
+                <% members.forEach(member => { %>
+                  <label class="member-checkbox-item">
+                    <input type="checkbox" name="members[]" value="<%= member.id %>">
+                    <span><%= member.name %></span>
+                  </label>
+                <% }) %>
+              </div>
+            </div>
+
+            <div class="search-section">
+              <h4>投稿期間</h4>
+              <div class="date-range-container">
+                <div class="date-input-group">
+                  <label>開始日:</label>
+                  <input type="date" name="date_from" class="date-input" value="<%= (req.query && req.query.date_from) ? req.query.date_from : '' %>">
+                </div>
+                <div class="date-separator">〜</div>
+                <div class="date-input-group">
+                  <label>終了日:</label>
+                  <input type="date" name="date_to" class="date-input" value="<%= (req.query && req.query.date_to) ? req.query.date_to : '' %>">
+                </div>
+              </div>
+            </div>
+
+            <div class="search-actions">
+              <button type="submit" class="search-button-advanced">🔍 詳細検索実行</button>
+              <button type="button" onclick="resetAdvancedForm()" class="reset-button">リセット</button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- 統計情報 -->
+      <div class="stats-row">
+        <div class="stat-card" title="現在データベースに投稿があるメンバー数">
+          <span class="stat-number"><%= stats.uniqueAuthors || members.length %></span>
+          <span class="stat-label">投稿者</span>
+        </div>
+        <div class="stat-card" title="ダウンロード済みのブログ画像ファイル数">
+          <span class="stat-number"><%= stats.totalFiles %></span>
+          <span class="stat-label">画像</span>
+        </div>
+        <div class="stat-card" title="画像の総ファイルサイズ（<%= (stats.totalSize / 1024 / 1024).toFixed(2) %> MB）">
+          <span class="stat-number"><%= (stats.totalSize / 1024 / 1024).toFixed(0) %></span>
+          <span class="stat-label">MB</span>
+        </div>
+      </div>
+
+      <!-- 検索結果または最新記事 -->
+      <div class="content-section">
+        <div class="view-toggle">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <% if (keyword) { %>
+                <h3>「<%= keyword %>」の検索結果: <%= (typeof pagination !== 'undefined' && pagination) ? pagination.totalPosts : posts.length %>件</h3>
+              <% } else { %>
+                <h3>最新のブログ記事</h3>
+              <% } %>
+            </div>
+            <div class="per-page-selector">
+              <label>表示件数:</label>
+              <select id="per-page-select" onchange="changePerPage(this.value)">
+                <option value="20" <%= (typeof pagination !== 'undefined' && pagination && pagination.perPage == 20) ? 'selected' : '' %>>20件</option>
+                <option value="50" <%= (typeof pagination !== 'undefined' && pagination && pagination.perPage == 50) ? 'selected' : (!req.query.per_page ? 'selected' : '') %>>50件</option>
+                <option value="100" <%= (typeof pagination !== 'undefined' && pagination && pagination.perPage == 100) ? 'selected' : '' %>>100件</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <% if (posts.length === 0) { %>
+          <div class="no-results">
+            <p>記事が見つかりませんでした</p>
+            <% if (keyword) { %>
+              <p>別のキーワードで検索してみてください</p>
+            <% } %>
+          </div>
+        <% } else { %>
+          <!-- ページネーション（上部） -->
+          <% if (typeof pagination !== 'undefined' && pagination && pagination.totalPages > 1) { %>
+            <div class="pagination-container">
+              <div class="pagination">
+                <% if (pagination.hasPrev) { %>
+                  <a href="?<%= getQueryString({page: pagination.page - 1}) %>" class="page-link">← 前へ</a>
+                <% } %>
+
+                <%
+                  const maxVisible = 5;
+                  let startPage = Math.max(1, pagination.page - Math.floor(maxVisible / 2));
+                  let endPage = Math.min(pagination.totalPages, startPage + maxVisible - 1);
+                  if (endPage - startPage < maxVisible - 1) {
+                    startPage = Math.max(1, endPage - maxVisible + 1);
+                  }
+                %>
+
+                <% if (startPage > 1) { %>
+                  <a href="?<%= getQueryString({page: 1}) %>" class="page-link">1</a>
+                  <% if (startPage > 2) { %>
+                    <span class="page-dots">...</span>
+                  <% } %>
+                <% } %>
+
+                <% for (let i = startPage; i <= endPage; i++) { %>
+                  <% if (i === pagination.page) { %>
+                    <span class="page-current"><%= i %></span>
+                  <% } else { %>
+                    <a href="?<%= getQueryString({page: i}) %>" class="page-link"><%= i %></a>
+                  <% } %>
+                <% } %>
+
+                <% if (endPage < pagination.totalPages) { %>
+                  <% if (endPage < pagination.totalPages - 1) { %>
+                    <span class="page-dots">...</span>
+                  <% } %>
+                  <a href="?<%= getQueryString({page: pagination.totalPages}) %>" class="page-link"><%= pagination.totalPages %></a>
+                <% } %>
+
+                <% if (pagination.hasNext) { %>
+                  <a href="?<%= getQueryString({page: pagination.page + 1}) %>" class="page-link">次へ →</a>
+                <% } %>
+              </div>
+              <div class="page-info">
+                <%= ((pagination.page - 1) * pagination.perPage + 1) %> - <%= Math.min(pagination.page * pagination.perPage, pagination.totalPosts) %> / <%= pagination.totalPosts %>件
+              </div>
+            </div>
+          <% } %>
+
+          <!-- テーブルビュー -->
+          <div id="table-view" class="posts-table">
+            <div class="bulk-actions" style="margin-bottom: 15px;">
+              <button onclick="selectAll()" class="bulk-btn">全選択</button>
+              <button onclick="deselectAll()" class="bulk-btn">全解除</button>
+              <button onclick="bulkDelete()" class="bulk-delete-btn">選択した投稿を削除</button>
+              <span id="selected-count" class="selected-info">0件選択中</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th width="40px">選択</th>
+                  <th>投稿日</th>
+                  <th>投稿者</th>
+                  <th>タイトル</th>
+                  <th>画像</th>
+                  <th>公式サイト</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% posts.forEach(post => { %>
+                  <tr>
+                    <td>
+                      <input type="checkbox" class="post-checkbox" value="<%= post.id %>" onchange="updateSelectedCount()">
+                    </td>
+                    <td><%= post.date %></td>
+                    <td>
+                      <%= post.member_name %>
+                      <% if (post.site === 'keyakizaka46') { %>
+                        <span style="color: #2e7d32; font-size: 0.8em;">[欅坂46]</span>
+                      <% } %>
+                    </td>
+                    <td>
+                      <a href="/post/<%= post.id %>" class="title-link">
+                        <%= post.title || 'タイトルなし' %>
+                      </a>
+                    </td>
+                    <td>
+                      <% if (post.images && post.images.length > 0) { %>
+                        📷 <%= post.images.length %>
+                      <% } else { %>
+                        -
+                      <% } %>
+                    </td>
+                    <td>
+                      <a href="<%= post.url %>" target="_blank">🔗</a>
+                    </td>
+                    <td>
+                      <button onclick="deletePost(<%= post.id %>)" class="delete-btn" title="投稿を削除">🗑️</button>
+                    </td>
+                  </tr>
+                  <tr id="content-<%= post.id %>" class="post-content-row" style="display:none;">
+                    <td colspan="7">
+                      <div class="post-full-content">
+                        <p><%= post.content %></p>
+                        <% if (post.local_images && post.local_images.length > 0) { %>
+                          <div class="post-images-preview">
+                            <% post.local_images.slice(0, 3).forEach(localImg => { %>
+                              <% if (localImg && localImg.includes('/images/')) { %>
+                                <% const cleanPath = localImg.replace(/.*\/images\//, '/images/').split('?')[0].split('&')[0]; %>
+                                <img src="<%= cleanPath %>" alt="記事画像" style="max-width:200px; margin:5px;" onerror="this.style.display='none'">
+                              <% } %>
+                            <% }) %>
+                          </div>
+                        <% } else if (post.images && post.images.length > 0) { %>
+                          <div class="post-images-preview">
+                            <% post.images.slice(0, 3).forEach(img => { %>
+                              <img src="<%= img %>" alt="記事画像" style="max-width:200px; margin:5px;">
+                            <% }) %>
+                          </div>
+                        <% } %>
+                        <a href="/post/<%= post.id %>" class="detail-link">詳細を見る →</a>
+                      </div>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- ページネーション（下部） -->
+          <% if (typeof pagination !== 'undefined' && pagination && pagination.totalPages > 1) { %>
+            <div class="pagination-container" style="margin-top: 20px;">
+              <div class="pagination">
+                <% if (pagination.hasPrev) { %>
+                  <a href="?<%= getQueryString({page: pagination.page - 1}) %>" class="page-link">← 前へ</a>
+                <% } %>
+
+                <%
+                  const maxVisible2 = 5;
+                  let startPage2 = Math.max(1, pagination.page - Math.floor(maxVisible2 / 2));
+                  let endPage2 = Math.min(pagination.totalPages, startPage2 + maxVisible2 - 1);
+                  if (endPage2 - startPage2 < maxVisible2 - 1) {
+                    startPage2 = Math.max(1, endPage2 - maxVisible2 + 1);
+                  }
+                %>
+
+                <% if (startPage2 > 1) { %>
+                  <a href="?<%= getQueryString({page: 1}) %>" class="page-link">1</a>
+                  <% if (startPage2 > 2) { %>
+                    <span class="page-dots">...</span>
+                  <% } %>
+                <% } %>
+
+                <% for (let i = startPage2; i <= endPage2; i++) { %>
+                  <% if (i === pagination.page) { %>
+                    <span class="page-current"><%= i %></span>
+                  <% } else { %>
+                    <a href="?<%= getQueryString({page: i}) %>" class="page-link"><%= i %></a>
+                  <% } %>
+                <% } %>
+
+                <% if (endPage2 < pagination.totalPages) { %>
+                  <% if (endPage2 < pagination.totalPages - 1) { %>
+                    <span class="page-dots">...</span>
+                  <% } %>
+                  <a href="?<%= getQueryString({page: pagination.totalPages}) %>" class="page-link"><%= pagination.totalPages %></a>
+                <% } %>
+
+                <% if (pagination.hasNext) { %>
+                  <a href="?<%= getQueryString({page: pagination.page + 1}) %>" class="page-link">次へ →</a>
+                <% } %>
+              </div>
+            </div>
+          <% } %>
+        </div>
+
+          <!-- カードビュー -->
+          <div id="card-view" class="posts-grid" style="display:none;">
+            <% posts.forEach(post => { %>
+              <article class="post-card">
+                <a href="/post/<%= post.id %>">
+                  <div class="post-card-header">
+                    <span class="post-author"><%= post.member_name %></span>
+                    <span class="post-date"><%= post.date %></span>
+                  </div>
+                  <h4 class="post-title"><%= post.title || 'タイトルなし' %></h4>
+                  <p class="post-excerpt">
+                    <%= post.content ? post.content.substring(0, 100) + '...' : '' %>
+                  </p>
+                  <div class="post-card-footer">
+                    <% if (post.images && post.images.length > 0) { %>
+                      <span class="image-badge">📷 <%= post.images.length %></span>
+                    <% } %>
+                    <span class="read-more">続きを読む →</span>
+                  </div>
+                </a>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+      </div>
+
+      <!-- クイックリンク -->
+      <div class="quick-links">
+        <h3>メンバーから探す</h3>
+        <div class="member-tags">
+          <% members.slice(0, 10).forEach(member => { %>
+            <a href="/member/<%= member.id %>" class="member-tag">
+              <%= member.name %>
+            </a>
+          <% }) %>
+          <a href="/members" class="member-tag more">
+            すべて見る →
+          </a>
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <p>&copy; 2025 櫻坂46 ブログアーカイブ</p>
+    </footer>
+  </div>
+
+  <script>
+    // 表示件数変更
+    function changePerPage(value) {
+      const params = new URLSearchParams(window.location.search);
+      params.set('per_page', value);
+      params.delete('page'); // ページ番号をリセット
+      window.location.href = '?' + params.toString();
+    }
+
+    // ビュー切り替え
+    function switchView(view) {
+      const tableView = document.getElementById('table-view');
+      const cardView = document.getElementById('card-view');
+      const tableBtn = document.getElementById('table-view-btn');
+      const cardBtn = document.getElementById('card-view-btn');
+
+      if (view === 'table') {
+        tableView.style.display = 'block';
+        cardView.style.display = 'none';
+        tableBtn.classList.add('active');
+        cardBtn.classList.remove('active');
+      } else {
+        tableView.style.display = 'none';
+        cardView.style.display = 'grid';
+        tableBtn.classList.remove('active');
+        cardBtn.classList.add('active');
+      }
+    }
+
+    // タイトルクリックで本文表示
+    function showPostContent(postId) {
+      const contentRow = document.getElementById('content-' + postId);
+      if (contentRow.style.display === 'none') {
+        // 他の開いているコンテンツを閉じる
+        document.querySelectorAll('.post-content-row').forEach(row => {
+          row.style.display = 'none';
+        });
+        contentRow.style.display = 'table-row';
+      } else {
+        contentRow.style.display = 'none';
+      }
+    }
+
+    // 投稿削除
+    async function deletePost(postId) {
+      if (!confirm('この投稿を削除しますか？')) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/post/${postId}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          alert('投稿が削除されました');
+          location.reload(); // ページをリロード
+        } else {
+          alert('削除に失敗しました: ' + result.message);
+        }
+      } catch (error) {
+        alert('削除中にエラーが発生しました');
+        console.error(error);
+      }
+    }
+
+    // 詳細検索の表示切り替え
+    function toggleAdvancedSearch() {
+      const advancedSearch = document.getElementById('advanced-search');
+      const advancedBtn = document.getElementById('advanced-search-btn');
+
+      if (advancedSearch.style.display === 'none') {
+        advancedSearch.style.display = 'block';
+        advancedBtn.textContent = '⚙️ 簡易検索';
+      } else {
+        advancedSearch.style.display = 'none';
+        advancedBtn.textContent = '⚙️ 詳細検索';
+      }
+    }
+
+    // メンバー表示の切り替え
+    function toggleMoreMembers() {
+      const moreMembers = document.getElementById('more-members');
+      const showMoreBtn = document.querySelector('.show-more-btn');
+
+      if (moreMembers.style.display === 'none') {
+        moreMembers.style.display = 'block';
+        showMoreBtn.textContent = '一部を表示';
+      } else {
+        moreMembers.style.display = 'none';
+        showMoreBtn.textContent = 'すべて表示';
+      }
+    }
+
+    // 詳細検索フォームのリセット
+    function resetAdvancedForm() {
+      const form = document.getElementById('search-form');
+
+      // すべての入力フィールドをクリア
+      form.querySelectorAll('input[type="text"], input[type="date"]').forEach(input => {
+        input.value = '';
+      });
+
+      // チェックボックスをクリア
+      form.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.checked = false;
+      });
+
+      // セレクトボックスを初期値に戻す
+      form.querySelectorAll('select').forEach(select => {
+        if (select.name !== 'member') { // 基本検索のメンバー選択は除く
+          select.selectedIndex = 0;
+        }
+      });
+
+      // ラジオボタンを初期値に戻す
+      document.getElementById('sort-desc').checked = true;
+    }
+
+    // チェックボックス操作
+    function selectAll() {
+      const checkboxes = document.querySelectorAll('.post-checkbox');
+      checkboxes.forEach(cb => cb.checked = true);
+      updateSelectedCount();
+    }
+
+    function deselectAll() {
+      const checkboxes = document.querySelectorAll('.post-checkbox');
+      checkboxes.forEach(cb => cb.checked = false);
+      updateSelectedCount();
+    }
+
+    function updateSelectedCount() {
+      const selectedCount = document.querySelectorAll('.post-checkbox:checked').length;
+      document.getElementById('selected-count').textContent = selectedCount + '件選択中';
+    }
+
+    // 一括削除
+    async function bulkDelete() {
+      const selectedCheckboxes = document.querySelectorAll('.post-checkbox:checked');
+
+      if (selectedCheckboxes.length === 0) {
+        alert('削除する投稿を選択してください');
+        return;
+      }
+
+      const postIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+
+      if (!confirm(`選択した${postIds.length}件の投稿を削除しますか？`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/posts/bulk-delete', {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ postIds: postIds })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          alert(`${result.deletedCount}件の投稿が削除されました`);
+          location.reload(); // ページをリロード
+        } else {
+          alert('削除に失敗しました: ' + result.message);
+        }
+      } catch (error) {
+        alert('削除中にエラーが発生しました');
+        console.error(error);
+      }
+    }
+
+    // ページロード時の設定
+    document.addEventListener('DOMContentLoaded', function() {
+      // 検索フィールドがある場合はフォーカス
+      const searchInput = document.querySelector('.search-input-main');
+      if (searchInput && !searchInput.value) {
+        searchInput.focus();
+      }
+    });
+  </script>
+</body>
+</html>

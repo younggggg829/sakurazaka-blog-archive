@@ -1,0 +1,60 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# データベース（ボリュームマウントするため）
+sakurazaka_blog.db
+sakurazaka_blog.db-journal
+*.db
+
+# 画像（ボリュームマウントするため）
+images/
+
+# キャッシュ（ボリュームマウントするため）
+image_cache.json
+
+# Git
+.git/
+.gitignore
+
+# ドキュメント
+*.md
+!README.md
+
+# ログファイル
+*.log
+logs/
+
+# 環境設定
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# エディタ
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Playwright（Dockerfileで再インストール）
+.playwright/
+
+# テスト・デバッグファイル
+test-*.js
+debug-*.js
+fetch-keyaki-ids.js
+
+# バックアップ
+*.bak
+*.backup
+
+# Docker関連
+Dockerfile
+docker-compose.yml
+.dockerignore

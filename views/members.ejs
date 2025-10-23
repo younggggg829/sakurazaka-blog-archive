@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>メンバー一覧 - <%= title %></title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🌸 櫻坂46 ブログアーカイブ</h1>
+      <nav>
+        <a href="/">ホーム</a>
+        <a href="/members">メンバー一覧</a>
+      </nav>
+    </header>
+
+    <main>
+      <h2>メンバー一覧</h2>
+      <div class="member-list">
+        <% members.forEach(member => { %>
+          <div class="member-list-item">
+            <a href="/member/<%= member.id %>" class="member-link">
+              <div class="member-info">
+                <div class="member-icon">👤</div>
+                <div class="member-details">
+                  <h3 class="member-name"><%= member.name %></h3>
+                </div>
+              </div>
+              <div class="member-stats">
+                <% if (stats.memberStats && stats.memberStats[`member_${member.id}`]) { %>
+                  <p class="image-count">
+                    画像: <%= stats.memberStats[`member_${member.id}`].files %>枚
+                  </p>
+                <% } %>
+                <div class="member-arrow">→</div>
+              </div>
+            </a>
+          </div>
+        <% }) %>
+      </div>
+    </main>
+
+    <footer>
+      <p>&copy; 2025 櫻坂46 ブログアーカイブ</p>
+    </footer>
+  </div>
+</body>
+</html>

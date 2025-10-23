@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  sakurazaka-blog:
+    build: .
+    container_name: sakurazaka-blog
+    volumes:
+      - ./images:/app/images
+      - ./sakurazaka_blog.db:/app/sakurazaka_blog.db
+      - ./image_cache.json:/app/image_cache.json
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    networks:
+      - sakurazaka-network
+
+networks:
+  sakurazaka-network:
+    driver: bridge
