@@ -1,3 +1,15 @@
+<%
+  function getQueryString(overrides) {
+    const params = new URLSearchParams();
+    if (typeof req !== 'undefined' && req.query && req.query.per_page) {
+      params.set('per_page', req.query.per_page);
+    }
+    Object.keys(overrides).forEach(key => {
+      params.set(key, overrides[key]);
+    });
+    return params.toString();
+  }
+%>
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -18,11 +30,70 @@
 
     <main>
       <div class="blog-list">
-        <h2>ブログ記事一覧 (<%= posts.length %>件)</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <h2>ブログ記事一覧 (<%= (typeof pagination !== 'undefined' && pagination) ? pagination.totalPosts : posts.length %>件)</h2>
+          <div class="per-page-selector">
+            <label>表示件数:</label>
+            <select id="per-page-select" onchange="changePerPage(this.value)">
+              <option value="20" <%= (typeof pagination !== 'undefined' && pagination && pagination.perPage == 20) ? 'selected' : '' %>>20件</option>
+              <option value="50" <%= (typeof pagination !== 'undefined' && pagination && pagination.perPage == 50) ? 'selected' : ((typeof req === 'undefined' || !req.query || !req.query.per_page) ? 'selected' : '') %>>50件</option>
+              <option value="100" <%= (typeof pagination !== 'undefined' && pagination && pagination.perPage == 100) ? 'selected' : '' %>>100件</option>
+            </select>
+          </div>
+        </div>
 
         <% if (posts.length === 0) { %>
           <p>まだブログ記事がありません。</p>
         <% } else { %>
+          <!-- ページネーション（上部） -->
+          <% if (typeof pagination !== 'undefined' && pagination && pagination.totalPages > 1) { %>
+            <div class="pagination-container">
+              <div class="pagination">
+                <% if (pagination.hasPrev) { %>
+                  <a href="?<%= getQueryString({page: pagination.page - 1}) %>" class="page-link">← 前へ</a>
+                <% } %>
+
+                <%
+                  const maxVisible = 5;
+                  let startPage = Math.max(1, pagination.page - Math.floor(maxVisible / 2));
+                  let endPage = Math.min(pagination.totalPages, startPage + maxVisible - 1);
+                  if (endPage - startPage < maxVisible - 1) {
+                    startPage = Math.max(1, endPage - maxVisible + 1);
+                  }
+                %>
+
+                <% if (startPage > 1) { %>
+                  <a href="?<%= getQueryString({page: 1}) %>" class="page-link">1</a>
+                  <% if (startPage > 2) { %>
+                    <span class="page-dots">...</span>
+                  <% } %>
+                <% } %>
+
+                <% for (let i = startPage; i <= endPage; i++) { %>
+                  <% if (i === pagination.page) { %>
+                    <span class="page-current"><%= i %></span>
+                  <% } else { %>
+                    <a href="?<%= getQueryString({page: i}) %>" class="page-link"><%= i %></a>
+                  <% } %>
+                <% } %>
+
+                <% if (endPage < pagination.totalPages) { %>
+                  <% if (endPage < pagination.totalPages - 1) { %>
+                    <span class="page-dots">...</span>
+                  <% } %>
+                  <a href="?<%= getQueryString({page: pagination.totalPages}) %>" class="page-link"><%= pagination.totalPages %></a>
+                <% } %>
+
+                <% if (pagination.hasNext) { %>
+                  <a href="?<%= getQueryString({page: pagination.page + 1}) %>" class="page-link">次へ →</a>
+                <% } %>
+              </div>
+              <div class="page-info">
+                <%= ((pagination.page - 1) * pagination.perPage + 1) %> - <%= Math.min(pagination.page * pagination.perPage, pagination.totalPosts) %> / <%= pagination.totalPosts %>件
+              </div>
+            </div>
+          <% } %>
+
           <% posts.forEach(post => { %>
             <article class="blog-item">
               <a href="/post/<%= post.id %>">
@@ -31,18 +102,60 @@
                   <span class="date"><%= post.date %></span>
                 </div>
                 <div class="blog-preview">
-                  <% if (post.content) { %>
-                    <% const cleanContent = post.content.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim(); %>
-                    <%= cleanContent.substring(0, 150) + (cleanContent.length > 150 ? '...' : '') %>
-                  <% } %>
+                  <%= cleanTextPreview(post.content, 150) %>
                 </div>
                 <div class="blog-meta">
-                  <span>画像: <%= post.images ? post.images.length : 0 %>枚</span>
                   <span class="read-more">続きを読む →</span>
                 </div>
               </a>
             </article>
           <% }) %>
+
+          <!-- ページネーション（下部） -->
+          <% if (typeof pagination !== 'undefined' && pagination && pagination.totalPages > 1) { %>
+            <div class="pagination-container" style="margin-top: 20px;">
+              <div class="pagination">
+                <% if (pagination.hasPrev) { %>
+                  <a href="?<%= getQueryString({page: pagination.page - 1}) %>" class="page-link">← 前へ</a>
+                <% } %>
+
+                <%
+                  const maxVisible2 = 5;
+                  let startPage2 = Math.max(1, pagination.page - Math.floor(maxVisible2 / 2));
+                  let endPage2 = Math.min(pagination.totalPages, startPage2 + maxVisible2 - 1);
+                  if (endPage2 - startPage2 < maxVisible2 - 1) {
+                    startPage2 = Math.max(1, endPage2 - maxVisible2 + 1);
+                  }
+                %>
+
+                <% if (startPage2 > 1) { %>
+                  <a href="?<%= getQueryString({page: 1}) %>" class="page-link">1</a>
+                  <% if (startPage2 > 2) { %>
+                    <span class="page-dots">...</span>
+                  <% } %>
+                <% } %>
+
+                <% for (let i = startPage2; i <= endPage2; i++) { %>
+                  <% if (i === pagination.page) { %>
+                    <span class="page-current"><%= i %></span>
+                  <% } else { %>
+                    <a href="?<%= getQueryString({page: i}) %>" class="page-link"><%= i %></a>
+                  <% } %>
+                <% } %>
+
+                <% if (endPage2 < pagination.totalPages) { %>
+                  <% if (endPage2 < pagination.totalPages - 1) { %>
+                    <span class="page-dots">...</span>
+                  <% } %>
+                  <a href="?<%= getQueryString({page: pagination.totalPages}) %>" class="page-link"><%= pagination.totalPages %></a>
+                <% } %>
+
+                <% if (pagination.hasNext) { %>
+                  <a href="?<%= getQueryString({page: pagination.page + 1}) %>" class="page-link">次へ →</a>
+                <% } %>
+              </div>
+            </div>
+          <% } %>
         <% } %>
       </div>
     </main>
@@ -51,5 +164,15 @@
       <p>&copy; 2025 櫻坂46 ブログアーカイブ</p>
     </footer>
   </div>
+
+  <script>
+    // 表示件数変更
+    function changePerPage(value) {
+      const params = new URLSearchParams(window.location.search);
+      params.set('per_page', value);
+      params.delete('page'); // ページ番号をリセット
+      window.location.href = '?' + params.toString();
+    }
+  </script>
 </body>
 </html>

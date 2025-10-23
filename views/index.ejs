@@ -361,7 +361,7 @@
                   </div>
                   <h4 class="post-title"><%= post.title || 'タイトルなし' %></h4>
                   <p class="post-excerpt">
-                    <%= post.content ? post.content.substring(0, 100) + '...' : '' %>
+                    <%= cleanTextPreview(post.content, 100) %>
                   </p>
                   <div class="post-card-footer">
                     <% if (post.images && post.images.length > 0) { %>

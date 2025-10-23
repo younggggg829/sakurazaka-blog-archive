@@ -175,6 +175,50 @@ function formatDate(dateStr) {
   return dateStr.replace(/(\d{4})[年\-\.](\d{1,2})[月\-\.](\d{1,2})[日]?/, '$1/$2/$3');
 }
 
+// HTMLエンティティをデコードする関数
+function decodeHTMLEntities(text) {
+  if (!text) return '';
+
+  const entities = {
+    '&nbsp;': ' ',
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#39;': "'",
+    '&apos;': "'"
+  };
+
+  return text.replace(/&[^;]+;/g, function(entity) {
+    return entities[entity] || entity;
+  });
+}
+
+// テキストをクリーンにする関数（HTMLタグ削除 + エンティティデコード）
+function cleanTextPreview(html, maxLength = 150) {
+  if (!html) return '';
+
+  // HTMLタグを削除
+  let text = html.replace(/<[^>]*>/g, '');
+
+  // HTMLエンティティをデコード
+  text = decodeHTMLEntities(text);
+
+  // 空白を整理
+  text = text.replace(/\s+/g, ' ').trim();
+
+  // 長さ制限
+  if (text.length > maxLength) {
+    return text.substring(0, maxLength) + '...';
+  }
+
+  return text;
+}
+
+// EJSテンプレートでグローバルに使える関数を登録
+app.locals.cleanTextPreview = cleanTextPreview;
+app.locals.decodeHTMLEntities = decodeHTMLEntities;
+
 // ホームページ - 検索画面
 app.get('/', async (req, res) => {
   try {
@@ -289,18 +333,38 @@ app.get('/member/:id', async (req, res) => {
       return;
     }
 
-    let posts = await dataService.getBlogPosts(memberId, 100);
+    // ページネーション
+    const page = parseInt(req.query.page) || 1;
+    const perPage = parseInt(req.query.per_page) || 50;
+
+    // すべての投稿を取得
+    const allPosts = await dataService.getBlogPosts(memberId, 10000);
+
+    // ページネーション計算
+    const totalPosts = allPosts.length;
+    const totalPages = Math.ceil(totalPosts / perPage);
+    const offset = (page - 1) * perPage;
+    const posts = allPosts.slice(offset, offset + perPage);
 
     // 日付をフォーマット
-    posts = posts.map(post => ({
+    const formattedPosts = posts.map(post => ({
       ...post,
       date: formatDate(post.date)
     }));
 
     res.render('member', {
       member,
-      posts,
-      title: `${member.name} - ブログ一覧`
+      posts: formattedPosts,
+      title: `${member.name} - ブログ一覧`,
+      req: req,
+      pagination: {
+        page,
+        perPage,
+        totalPages,
+        totalPosts,
+        hasNext: page < totalPages,
+        hasPrev: page > 1
+      }
     });
   } catch (error) {
     console.error(error);
