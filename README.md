@@ -72,12 +72,30 @@ images/
 
 ## 🚀 使用方法
 
+### 基本的な使い方
+
 ```bash
 # CLIモードで起動
 npm start
 
 # または直接実行
 node index.js
+
+# Webサーバーを直接起動
+node webServer.js
+```
+
+### テストの実行
+
+```bash
+# すべてのテストを実行
+npm test
+
+# テストをウォッチモードで実行（開発時）
+npm run test:watch
+
+# カバレッジレポートを生成
+npm run test:coverage
 ```
 
 **メニュー一覧：**
@@ -209,12 +227,24 @@ npm start
 
 ## 🛠️ 技術スタック
 
-- **Node.js**: サーバーサイド実行環境
-- **Playwright**: Web スクレイピング
-- **SQLite**: データベース
-- **Express.js**: Web サーバー
-- **EJS**: テンプレートエンジン
+### バックエンド
+
+- **Node.js** 20+: サーバーサイド実行環境
+- **Playwright** 1.56.1: Web スクレイピング
+- **SQLite3** 5.1.7: データベース
+- **Express.js** 5.1.0: Web サーバー
+- **EJS** 3.1.10: テンプレートエンジン
+
+### 開発ツール
+
+- **Jest** 29.7.0: テストフレームワーク
+- **Inquirer** 12.10.0: CLI インターフェース
+- **Chalk** 4.1.2: ターミナル装飾
+
+### その他
+
 - **画像処理**: ネイティブ Node.js（https/http）
+- **Docker**: コンテナ化対応
 
 ## 📊 統計情報・実行例
 
@@ -263,16 +293,39 @@ Saving to database...
 
 ## 🗂️ ファイル構成
 
+### 📁 主要ファイル
+
 - `index.js` - メインの CLI インターフェース
 - `webServer.js` - Express.js サーバー（ページング機能付き）
 - `fetchMembers.js` - メンバーリスト取得
 - `blogScraper.js` - 櫻坂 46 ブログスクレイピング
 - `keyakiBlogScraper.js` - 欅坂 46 ブログスクレイピング
 - `imageDownloader.js` - 画像ダウンロード・最適化
-- `database.js` - SQLite データベース操作（サイト識別対応）
+- `database.js` - SQLite データベース操作（async/await 対応）
+- `config.js` - アプリケーション設定
+- `storageAdapter.js` - ストレージ抽象化レイヤー
+
+### 📂 ユーティリティ（utils/）
+
+- `dateUtils.js` - 日付処理の共通関数
+- `constants.js` - 定数定義（レート制限、セレクター等）
+- `formatting.js` - テキスト整形・HTML クリーニング
+- `scraperUtils.js` - スクレイピング共通処理
+- `errorHandler.js` - 統一されたエラーハンドリング
+- `*.test.js` - Jest テストファイル
+
+### 📂 その他
+
 - `views/` - EJS テンプレート
 - `public/` - 静的ファイル（CSS 等）
 - `.gitignore` - キャッシュファイル除外設定
+
+### 📄 ドキュメント
+
+- `README.md` - このファイル
+- `PROJECT_STRUCTURE.md` - プロジェクト構造詳細
+- `DEPLOYMENT.md` - デプロイ手順
+- `DEPLOYMENT_EC2_S3.md` - AWS デプロイ手順
 
 ## 👥 対応メンバー
 
@@ -295,7 +348,9 @@ Saving to database...
 
 ## 📌 バージョン情報
 
-**Current Version: v1.0.0**
+**Current Version: v1.1.0**
+
+### 最新アップデート（2025-10-30）
 
 ### 主な機能
 
@@ -306,7 +361,7 @@ Saving to database...
 - **🌐 Web ビューアー**: ブラウザで快適に閲覧（テーブル/カードビュー切替）
 - **⚡ ページング**: 20/50/100 件表示選択
 - **🗑️ 一括削除**: チェックボックスで複数記事を選択削除
-- **🤖 自動レート制限**: サーバー負荷を考慮した安全なスクレイピング
+- **🧪 テストカバレッジ**: 50%以上のコードカバレッジ
 
 ## ⚠️ 注意事項
 
@@ -315,9 +370,131 @@ Saving to database...
 - 画像ダウンロードはディスク容量にご注意ください
 - 初回実行時に自動でメンバーリストを取得します
 
+## 🔄 アプリの稼働管理
+
+### 📊 稼働状況の確認
+
+Web サーバーが起動しているか確認する方法：
+
+```bash
+# ポート3000を使用しているプロセスを確認
+lsof -i :3000
+
+# または、プロセス一覧から確認
+ps aux | grep "node webServer.js" | grep -v grep
+```
+
+**出力例：**
+
+```
+COMMAND   PID    USER   FD   TYPE  DEVICE SIZE/OFF NODE NAME
+node    24540 xueyang   15u  IPv4  ...      0t0  TCP *:hbci (LISTEN)
+```
+
+- **PID**: プロセス ID（例: 24540）
+- **LISTEN**: サーバーが起動中であることを示す
+
+### ⏸️ アプリの停止
+
+```bash
+# 方法1: ポート3000を使用しているプロセスを停止
+lsof -ti:3000 | xargs kill -9
+
+# 方法2: プロセスIDを指定して停止
+kill -9 24540  # 24540は稼働状況確認で取得したPID
+```
+
+### 🔄 アプリの再起動
+
+```bash
+# 古いプロセスを停止してから再起動
+lsof -ti:3000 | xargs kill -9 2>/dev/null || true
+node webServer.js
+```
+
+### 🌙 バックグラウンドで起動
+
+ターミナルを閉じても動作し続ける方法：
+
+```bash
+# nohupを使用してバックグラウンド起動
+lsof -ti:3000 | xargs kill -9 2>/dev/null || true
+nohup node webServer.js > webserver.log 2>&1 &
+
+# ログファイルで動作確認
+tail -f webserver.log
+```
+
+**説明：**
+
+- `nohup`: ターミナル終了後も実行継続
+- `> webserver.log`: 出力をファイルに保存
+- `2>&1`: エラー出力も同じファイルに
+- `&`: バックグラウンド実行
+
+### 📝 ログの確認
+
+```bash
+# リアルタイムでログを表示
+tail -f webserver.log
+
+# 最新の50行を表示
+tail -50 webserver.log
+
+# ログファイル全体を表示
+cat webserver.log
+```
+
+### 🔍 トラブルシューティング（稼働管理）
+
+#### サーバーが起動しない場合
+
+```bash
+# 1. ポートが使用中か確認
+lsof -i :3000
+
+# 2. ポートを使用中のプロセスを強制終了
+lsof -ti:3000 | xargs kill -9
+
+# 3. 再起動
+node webServer.js
+```
+
+#### 複数のプロセスが起動している場合
+
+```bash
+# 全てのwebServer.jsプロセスを確認
+ps aux | grep "node webServer.js" | grep -v grep
+
+# 全て停止
+pkill -f "node webServer.js"
+
+# または個別に停止
+kill -9 [PID1] [PID2] [PID3]
+```
+
 ## 🛠️ トラブルシューティング
 
 ### 🔧 よくある問題と解決法
+
+#### 🧪 テスト関連
+
+- **Jest がインストールされていない**:
+  ```bash
+  npm install --save-dev jest@^29.7.0
+  ```
+- **テストが失敗する**:
+
+  ```bash
+  # Node.jsバージョン確認（推奨: v20以上）
+  node -v
+
+  # 依存関係の再インストール
+  npm ci
+
+  # キャッシュのクリア
+  npm cache clean --force
+  ```
 
 #### 📡 接続・取得エラー
 
@@ -354,21 +531,11 @@ Saving to database...
 
 #### 🗑️ 削除機能について
 
-**削除ボタン（🗑️）をクリックした場合：**
+**選択した投稿を削除ボタンをクリックした場合：**
 
 - ✅ データベースから記事情報を完全削除
 - ✅ 画像のデータベースレコードも削除
-- ❌ ローカル画像ファイル（`images/`フォルダ内）は残存
-
-**画像ファイルを完全削除したい場合：**
-
-```bash
-# 特定メンバーの画像フォルダを削除
-rm -rf images/森田ひかる_sakurazaka46
-
-# または全画像削除
-rm -rf images/*
-```
+- ✅ ローカル画像ファイル（`images/`フォルダ内）も削除
 
 #### 🔍 データベース内容の確認
 
@@ -384,3 +551,24 @@ sqlite3 sakurazaka_blog.db "SELECT * FROM members;"
 # 特定メンバーの記事数
 sqlite3 sakurazaka_blog.db "SELECT member_name, COUNT(*) FROM blog_posts GROUP BY member_id;"
 ```
+
+---
+
+## 🔄 更新履歴
+
+### v1.1.0 (2025-10-30)
+
+---
+
+## 📖 関連ドキュメント
+
+- **[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)** - プロジェクト構造詳細
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - デプロイ手順
+- **[DEPLOYMENT_EC2_S3.md](DEPLOYMENT_EC2_S3.md)** - AWS デプロイ手順
+
+---
+
+**作成者**: young
+**ライセンス**: ISC
+**バージョン**: v1.1.0
+**最終更新**: 2025-10-30

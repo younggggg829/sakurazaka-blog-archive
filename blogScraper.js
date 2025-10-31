@@ -1,81 +1,49 @@
 const { chromium } = require('playwright');
+const { parseBlogDate, isDateInRange } = require('./utils/dateUtils');
+const { smartDelay, logScrapingStats, resetRateLimitState, incrementRequestCount } = require('./utils/scraperUtils');
+const { RATE_LIMIT, IMAGE_EXCLUDE_PATTERNS, SAKURAZAKA_SELECTORS, SITE_URLS, TIMEOUTS, PAGINATION } = require('./utils/constants');
+const { cleanHTMLContent } = require('./utils/formatting');
 
-// レート制限設定
-const RATE_LIMIT = {
-  REQUESTS_PER_MINUTE: 15,    // 1分間に最大15リクエスト
-  MIN_DELAY: 2000,            // 最小2秒間隔
-  MAX_DELAY: 4000,            // 最大4秒間隔
-  BURST_LIMIT: 10,            // 連続10リクエスト後に短い休憩
-  LONG_BREAK: 5000           // 5秒の短い休憩
-};
-
-let requestCount = 0;
-let lastRequestTime = 0;
-let startTime = Date.now();
-
-async function smartDelay(requestNumber) {
-  const now = Date.now();
-  const timeSinceStart = now - startTime;
-  const timeSinceLastRequest = now - lastRequestTime;
-
-  // 連続リクエスト制限
-  if (requestNumber > 0 && requestNumber % RATE_LIMIT.BURST_LIMIT === 0) {
-    console.log(`  ⏸️  ${RATE_LIMIT.BURST_LIMIT}件処理完了 - ${RATE_LIMIT.LONG_BREAK / 1000}秒休憩中...`);
-    await new Promise(resolve => setTimeout(resolve, RATE_LIMIT.LONG_BREAK));
-    lastRequestTime = Date.now();
-    return;
-  }
-
-  // 1分間のリクエスト数制限
-  const requestsPerMinute = (requestCount / (timeSinceStart / 60000));
-  if (requestsPerMinute > RATE_LIMIT.REQUESTS_PER_MINUTE) {
-    const waitTime = 60000 - (timeSinceStart % 60000);
-    console.log(`  ⏳ レート制限: ${Math.ceil(waitTime / 1000)}秒待機中...`);
-    await new Promise(resolve => setTimeout(resolve, waitTime));
-  }
-
-  // 最小間隔の確保
-  const minWaitTime = RATE_LIMIT.MIN_DELAY - timeSinceLastRequest;
-  if (minWaitTime > 0) {
-    await new Promise(resolve => setTimeout(resolve, minWaitTime));
-  }
-
-  // ランダム遅延（2-5秒）
-  const randomDelay = RATE_LIMIT.MIN_DELAY + Math.random() * (RATE_LIMIT.MAX_DELAY - RATE_LIMIT.MIN_DELAY);
-  await new Promise(resolve => setTimeout(resolve, randomDelay));
-
-  lastRequestTime = Date.now();
-}
-
-// ページネーション対応で全投稿URLを収集
-async function collectAllPostUrls(page, memberId, memberName, limit = null) {
+/**
+ * ページネーション対応で全投稿URLを収集
+ * @param {object} page - Playwrightページオブジェクト
+ * @param {string} memberId - メンバーID
+ * @param {string} memberName - メンバー名
+ * @param {number|null} limit - 取得件数制限（nullの場合は全件取得）
+ * @param {string|null} dateFrom - 開始日 "YYYY-MM-DD"
+ * @param {string|null} dateTo - 終了日 "YYYY-MM-DD"
+ * @returns {Promise<Array>} 投稿情報の配列
+ */
+async function collectAllPostUrls(page, memberId, memberName, limit = null, dateFrom = null, dateTo = null) {
   const allPosts = [];
   let currentPage = 0;
-  const maxPages = 20; // 安全装置（最大20ページ）
-  const needAll = limit === null; // limitがnullなら全件取得
+  const maxPages = PAGINATION.MAX_PAGES_SCRAPING;
+  const needAll = limit === null;
+
+  console.log(`  📅 日付範囲: ${dateFrom || '指定なし'} 〜 ${dateTo || '指定なし'}`);
 
   while (currentPage < maxPages) {
-    const blogUrl = `https://sakurazaka46.com/s/s46/diary/blog/list?ima=0000&page=${currentPage}&ct=${memberId}&cd=blog`;
+    const blogUrl = SITE_URLS.SAKURAZAKA46_BLOG_LIST(memberId, currentPage);
 
     await smartDelay(currentPage);
-    await page.goto(blogUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(2000);
-    requestCount++;
+    await page.goto(blogUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.PAGE_LOAD });
+    await page.waitForTimeout(TIMEOUTS.PAGE_WAIT);
+    incrementRequestCount();
 
-    const pageResult = await page.evaluate((currentPageNum) => {
-      // メインブログリストエリアのみを選択（com-blog-partクラス）
-      const mainBlogList = document.querySelector('.com-blog-part');
+    const pageResult = await page.evaluate(({ currentPageNum, selectors }) => {
+      // メインブログリストエリアのみを選択
+      const mainBlogList = document.querySelector(selectors.BLOG_LIST_CONTAINER);
       if (!mainBlogList) {
         return { posts: [], hasNext: false };
       }
 
       // com-blog-part内のli.boxのみから投稿を取得
-      const postItems = mainBlogList.querySelectorAll('li.box');
+      const postItems = mainBlogList.querySelectorAll(selectors.POST_ITEM);
       const postData = [];
       const uniqueUrls = new Set();
 
       postItems.forEach(item => {
-        const link = item.querySelector('a');
+        const link = item.querySelector(selectors.POST_LINK);
         if (!link) return;
 
         const href = link.getAttribute('href');
@@ -84,8 +52,8 @@ async function collectAllPostUrls(page, memberId, memberName, limit = null) {
           const fullUrl = href.startsWith('http') ? href : `https://sakurazaka46.com${href}`;
 
           // タイトルと日付を取得
-          const dateElement = item.querySelector('.date, .time');
-          const titleElement = item.querySelector('.title, h3, h4');
+          const dateElement = item.querySelector(selectors.POST_DATE);
+          const titleElement = item.querySelector(selectors.POST_TITLE);
 
           postData.push({
             url: fullUrl,
@@ -96,7 +64,7 @@ async function collectAllPostUrls(page, memberId, memberName, limit = null) {
       });
 
       // 次のページが存在するかチェック
-      const paginationLinks = document.querySelectorAll('.com-pager a, .pager a, [class*="pager"] a');
+      const paginationLinks = document.querySelectorAll(selectors.PAGINATION);
       let hasNextPage = false;
       paginationLinks.forEach(link => {
         const href = link.getAttribute('href') || '';
@@ -109,17 +77,43 @@ async function collectAllPostUrls(page, memberId, memberName, limit = null) {
         posts: postData,
         hasNext: hasNextPage
       };
-    }, currentPage);
+    }, { currentPageNum: currentPage, selectors: SAKURAZAKA_SELECTORS });
 
     if (pageResult.posts.length === 0) {
       break;
     }
 
-    allPosts.push(...pageResult.posts);
+    // 日付範囲でフィルタリング
+    const filteredPosts = pageResult.posts.filter(post =>
+      isDateInRange(post.date, dateFrom, dateTo)
+    );
 
-    // limit指定時、必要件数に達したら即座に終了
-    if (!needAll && allPosts.length >= limit) {
-      break;
+    allPosts.push(...filteredPosts);
+
+    // 日付範囲指定がある場合の終了条件チェック
+    if (dateFrom || dateTo) {
+      // 範囲より古い記事に達したかチェック
+      if (dateFrom) {
+        const oldestPostOnPage = pageResult.posts[pageResult.posts.length - 1];
+        const oldestDate = parseBlogDate(oldestPostOnPage?.date);
+        const fromDate = new Date(dateFrom);
+
+        // ページの最も古い記事が開始日より前なら、これ以降のページは不要
+        if (oldestDate && oldestDate < fromDate) {
+          console.log(`  ℹ️  指定期間より古い記事に到達しました（最古: ${oldestPostOnPage.date}）`);
+          break;
+        }
+      }
+
+      // limit指定時、必要件数に達したら終了
+      if (!needAll && allPosts.length >= limit) {
+        break;
+      }
+    } else {
+      // 日付範囲指定なしの場合、limit指定時に必要件数に達したら即座に終了
+      if (!needAll && allPosts.length >= limit) {
+        break;
+      }
     }
 
     // 次ページがない場合は終了
@@ -130,15 +124,28 @@ async function collectAllPostUrls(page, memberId, memberName, limit = null) {
     currentPage++;
   }
 
+  console.log(`  ✓ 合計 ${allPosts.length} 件の記事を収集しました`);
   return allPosts;
 }
 
-async function scrapeBlogPosts(memberId, memberName, limit = 10) {
+/**
+ * 櫻坂46のブログ投稿をスクレイピング
+ * @param {string} memberId - メンバーID
+ * @param {string} memberName - メンバー名
+ * @param {number|string} limit - 取得件数制限（'all'の場合は全件取得）
+ * @param {object} options - オプション {dateFrom, dateTo}
+ * @returns {Promise<Array>} スクレイピングされたブログ投稿の配列
+ */
+async function scrapeBlogPosts(memberId, memberName, limit = 10, options = {}) {
+  const { dateFrom = null, dateTo = null } = options;
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   const blogPosts = [];
 
   try {
+    resetRateLimitState();
+    const startTime = Date.now();
+
     console.log(`${memberName}さんのブログをスクレイピング中 (ID: ${memberId})...`);
     console.log(`  🚀 スクレイピング開始 - 適切な間隔で処理します`);
 
@@ -147,8 +154,7 @@ async function scrapeBlogPosts(memberId, memberName, limit = 10) {
     const targetLimit = isAll ? null : limit;
 
     // 全投稿URLを収集（ページネーション対応）
-    // limitを渡して必要件数だけ収集
-    const allPosts = await collectAllPostUrls(page, memberId, memberName, targetLimit);
+    const allPosts = await collectAllPostUrls(page, memberId, memberName, targetLimit, dateFrom, dateTo);
     const postsToProcess = isAll ? allPosts : allPosts.slice(0, limit);
 
     console.log(`  📊 ${postsToProcess.length}件の投稿を処理します`);
@@ -159,26 +165,17 @@ async function scrapeBlogPosts(memberId, memberName, limit = 10) {
 
       // レート制限の適用
       await smartDelay(index);
-      requestCount++;
+      incrementRequestCount();
 
       await page.goto(post.url, {
         waitUntil: 'domcontentloaded',
-        timeout: 30000
+        timeout: TIMEOUTS.PAGE_LOAD
       });
 
-      const details = await page.evaluate(() => {
+      const details = await page.evaluate(({ selectors, excludePatterns }) => {
         // タイトルを取得（複数のセレクタを試す）
         let title = '';
-        const titleSelectors = [
-          '.box-ttl h1',
-          '.box-ttl',
-          'h1.title',
-          'h1',
-          '.blog-title',
-          '.entry-title'
-        ];
-
-        for (const selector of titleSelectors) {
+        for (const selector of selectors.DETAIL_TITLE) {
           const element = document.querySelector(selector);
           if (element && element.textContent.trim() && !element.textContent.includes('OFFICIAL BLOG')) {
             title = element.textContent.trim();
@@ -188,15 +185,7 @@ async function scrapeBlogPosts(memberId, memberName, limit = 10) {
 
         // 本文を取得（より具体的なセレクタを使用）
         let content = '';
-        const contentSelectors = [
-          '.box-article',
-          '.blog-body',
-          '.entry-content',
-          '.blog-content',
-          '.article-body'
-        ];
-
-        for (const selector of contentSelectors) {
+        for (const selector of selectors.DETAIL_CONTENT) {
           const element = document.querySelector(selector);
           if (element && element.textContent.trim().length > 20) {
             // HTMLタグを保持したまま取得
@@ -218,13 +207,13 @@ async function scrapeBlogPosts(memberId, memberName, limit = 10) {
           });
         }
 
-        // 日付を取得（シンプルな方法）
+        // 日付を取得
         let date = '';
 
         // 方法1: 年月日が別々の要素に入っている場合
-        const yearEl = document.querySelector('.year');
-        const monthEl = document.querySelector('.month');
-        const dayEl = document.querySelector('.day');
+        const yearEl = document.querySelector(selectors.DETAIL_DATE_YEAR);
+        const monthEl = document.querySelector(selectors.DETAIL_DATE_MONTH);
+        const dayEl = document.querySelector(selectors.DETAIL_DATE_DAY);
 
         if (yearEl && monthEl && dayEl) {
           const year = yearEl.textContent.trim();
@@ -269,8 +258,7 @@ async function scrapeBlogPosts(memberId, memberName, limit = 10) {
           imgElements.forEach(img => {
             const src = img.getAttribute('src');
             if (src && !imageSet.has(src)) {
-              // 除外パターン（アイコンやロゴなど）
-              const excludePatterns = ['icon', 'logo', 'header', 'footer', 'nav', 'menu', 'app_', 'jasrac'];
+              // 除外パターン
               const isExcluded = excludePatterns.some(pattern => src.toLowerCase().includes(pattern));
 
               if (!isExcluded) {
@@ -289,7 +277,6 @@ async function scrapeBlogPosts(memberId, memberName, limit = 10) {
           while ((match = imgRegex.exec(content)) !== null) {
             const src = match[1];
             if (src && !imageSet.has(src)) {
-              const excludePatterns = ['icon', 'logo', 'header', 'footer', 'nav', 'menu', 'app_', 'jasrac'];
               const isExcluded = excludePatterns.some(pattern => src.toLowerCase().includes(pattern));
 
               if (!isExcluded) {
@@ -307,7 +294,7 @@ async function scrapeBlogPosts(memberId, memberName, limit = 10) {
           content: content.trim(),
           images: images
         };
-      });
+      }, { selectors: SAKURAZAKA_SELECTORS, excludePatterns: IMAGE_EXCLUDE_PATTERNS });
 
       blogPosts.push({
         memberId: memberId,
@@ -320,13 +307,7 @@ async function scrapeBlogPosts(memberId, memberName, limit = 10) {
       });
     }
 
-    const totalTime = (Date.now() - startTime) / 1000;
-    console.log(`✨ スクレイピング完了: ${blogPosts.length}件 (${totalTime.toFixed(1)}秒)`);
-    console.log(`📊 平均処理時間: ${(totalTime / Math.max(blogPosts.length, 1)).toFixed(1)}秒/件`);
-
-    // 統計をリセット
-    requestCount = 0;
-    startTime = Date.now();
+    logScrapingStats(blogPosts.length, startTime);
 
     await browser.close();
     return blogPosts;

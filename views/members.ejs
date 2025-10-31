@@ -25,7 +25,15 @@
               <div class="member-info">
                 <div class="member-icon">👤</div>
                 <div class="member-details">
-                  <h3 class="member-name"><%= member.name %></h3>
+                  <h3 class="member-name">
+                    <%= member.name %>
+                    <% if (member.has_keyaki) { %>
+                      <span style="color: #2e7d32; font-size: 0.75em; margin-left: 8px;">[欅坂46時代あり]</span>
+                    <% } %>
+                  </h3>
+                  <% if (member.post_count) { %>
+                    <p style="font-size: 0.85em; color: #666; margin-top: 4px;">投稿数: <%= member.post_count %>件</p>
+                  <% } %>
                 </div>
               </div>
               <div class="member-stats">
@@ -46,5 +54,39 @@
       <p>&copy; 2025 櫻坂46 ブログアーカイブ</p>
     </footer>
   </div>
+
+  <!-- ページトップへ戻るボタン -->
+  <button id="scroll-to-top" onclick="scrollToTop()" title="ページトップへ戻る">
+    ↑
+  </button>
+
+  <script>
+    // ページトップへスクロール
+    function scrollToTop() {
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      });
+    }
+
+    // スクロール時にボタンの表示/非表示を切り替え
+    function toggleScrollButton() {
+      const scrollButton = document.getElementById('scroll-to-top');
+      if (window.pageYOffset > 300) {
+        scrollButton.classList.add('show');
+      } else {
+        scrollButton.classList.remove('show');
+      }
+    }
+
+    // ページロード時の設定
+    document.addEventListener('DOMContentLoaded', function() {
+      // スクロールイベントリスナーを追加
+      window.addEventListener('scroll', toggleScrollButton);
+
+      // 初期表示時もチェック
+      toggleScrollButton();
+    });
+  </script>
 </body>
 </html>

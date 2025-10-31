@@ -18,7 +18,7 @@
 
     <main>
       <div class="search-section">
-        <h2>🔍 ブログ記事検索</h2>
+        <h2>🔍 ブログ検索</h2>
         <form action="/search" method="get" class="search-form">
           <input
             type="text"
@@ -36,7 +36,7 @@
           <h3>「<%= keyword %>」の検索結果: <%= posts.length %>件</h3>
 
           <% if (posts.length === 0) { %>
-            <p>該当する記事が見つかりませんでした。</p>
+            <p>該当するブログが見つかりませんでした。</p>
           <% } else { %>
             <% posts.forEach(post => { %>
               <article class="blog-item">
@@ -63,5 +63,39 @@
       <p>&copy; 2025 櫻坂46 ブログアーカイブ</p>
     </footer>
   </div>
+
+  <!-- ページトップへ戻るボタン -->
+  <button id="scroll-to-top" onclick="scrollToTop()" title="ページトップへ戻る">
+    ↑
+  </button>
+
+  <script>
+    // ページトップへスクロール
+    function scrollToTop() {
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      });
+    }
+
+    // スクロール時にボタンの表示/非表示を切り替え
+    function toggleScrollButton() {
+      const scrollButton = document.getElementById('scroll-to-top');
+      if (window.pageYOffset > 300) {
+        scrollButton.classList.add('show');
+      } else {
+        scrollButton.classList.remove('show');
+      }
+    }
+
+    // ページロード時の設定
+    document.addEventListener('DOMContentLoaded', function() {
+      // スクロールイベントリスナーを追加
+      window.addEventListener('scroll', toggleScrollButton);
+
+      // 初期表示時もチェック
+      toggleScrollButton();
+    });
+  </script>
 </body>
 </html>

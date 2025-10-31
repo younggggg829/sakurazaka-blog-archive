@@ -1,11 +1,13 @@
 {
   "name": "sakurazaka-blog-archive",
-  "version": "1.0.0",
-  "description": "櫻坂46・欅坂46ブログアーカイブツール - Blog scraping and archiving tool for Sakurazaka46 and Keyakizaka46",
+  "version": "1.1.0",
+  "description": "櫻坂46・欅坂46ブログアーカイブツール - Blog scraping and archiving tool for Sakurazaka46 and Keyakizaka46 (Refactored)",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "keywords": [],
   "author": "",
@@ -25,5 +27,20 @@
     "open": "^10.2.0",
     "playwright": "^1.56.1",
     "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "utils/**/*.js",
+      "!utils/**/*.test.js"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.js",
+      "**/*.test.js"
+    ]
   }
 }

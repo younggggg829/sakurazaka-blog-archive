@@ -75,22 +75,131 @@ async function selectMember(members = null) {
     if (!members) return null;
   }
 
-  const choices = members.map((member) => ({
-    name: `${member.name} (ID: ${member.id})`,
-    value: member,
-  }));
-
-  const { selectedMember } = await inquirer.prompt([
+  // 選択方法を聞く
+  const { method } = await inquirer.prompt([
     {
       type: "list",
-      name: "selectedMember",
-      message: "\nSelect a member:",
-      choices: [...choices, { name: "← Back", value: null }],
-      pageSize: 15,
+      name: "method",
+      message: "\nメンバー選択方法:",
+      choices: [
+        { name: "📝 番号を入力して選択（高速）", value: "number" },
+        { name: "🔍 名前で検索して選択", value: "search" },
+        { name: "📋 一覧から選択", value: "list" },
+        { name: "← Back", value: "back" },
+      ],
     },
   ]);
 
-  return selectedMember;
+  if (method === "back") return null;
+
+  if (method === "number") {
+    // 番号入力方式
+    console.log(chalk.cyan("\n=== メンバー一覧 ==="));
+    members.forEach((member, index) => {
+      console.log(
+        chalk.gray(`${index + 1}. ${member.name} (ID: ${member.id})`)
+      );
+    });
+    console.log(chalk.gray(`0. ← Back\n`));
+
+    const { memberNumber } = await inquirer.prompt([
+      {
+        type: "input",
+        name: "memberNumber",
+        message: "番号を入力してください:",
+        validate: (value) => {
+          const num = parseInt(value);
+          if (value === "0") return true;
+          if (isNaN(num) || num < 1 || num > members.length) {
+            return `1-${members.length}の数値、または0（戻る）を入力してください`;
+          }
+          return true;
+        },
+      },
+    ]);
+
+    const num = parseInt(memberNumber);
+    if (num === 0) return null;
+    return members[num - 1];
+  } else if (method === "search") {
+    // 検索方式
+    const { searchTerm } = await inquirer.prompt([
+      {
+        type: "input",
+        name: "searchTerm",
+        message: "メンバー名を入力してください（部分一致）:",
+        validate: (value) =>
+          value.trim().length > 0 || "1文字以上入力してください",
+      },
+    ]);
+
+    const filtered = members.filter((member) =>
+      member.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    if (filtered.length === 0) {
+      console.log(chalk.red("該当するメンバーが見つかりませんでした"));
+      return await selectMember(members); // 再度選択
+    }
+
+    console.log(chalk.green(`\n${filtered.length}件見つかりました:\n`));
+    filtered.forEach((member, index) => {
+      console.log(`${index + 1}. ${member.name} (ID: ${member.id})`);
+    });
+    console.log(chalk.gray(`0. ← やり直す\n`));
+
+    if (filtered.length === 1) {
+      const { confirm } = await inquirer.prompt([
+        {
+          type: "confirm",
+          name: "confirm",
+          message: `${filtered[0].name}を選択しますか？`,
+          default: true,
+        },
+      ]);
+      return confirm ? filtered[0] : await selectMember(members);
+    }
+
+    // 複数見つかった場合は番号入力方式
+    const { memberNumber } = await inquirer.prompt([
+      {
+        type: "input",
+        name: "memberNumber",
+        message: "番号を入力してください:",
+        validate: (value) => {
+          const num = parseInt(value);
+          if (value === "0") return true;
+          if (isNaN(num) || num < 1 || num > filtered.length) {
+            return `1-${filtered.length}の数値、または0（やり直す）を入力してください`;
+          }
+          return true;
+        },
+      },
+    ]);
+
+    const num = parseInt(memberNumber);
+    if (num === 0) return await selectMember(members);
+    return filtered[num - 1];
+  } else {
+    // 一覧選択方式（従来通り）
+    const choices = members.map((member) => ({
+      name: `${member.name} (ID: ${member.id})`,
+      value: member,
+    }));
+
+    const { selectedMember } = await inquirer.prompt([
+      {
+        type: "list",
+        name: "selectedMember",
+        message: "\nSelect a member:",
+        choices: [...choices, { name: "← Back", value: null }],
+        pageSize: 15,
+        loop: false, // ループを無効化
+      },
+    ]);
+
+    return selectedMember;
+  }
 }
 
 async function openMemberBlog() {
@@ -124,36 +233,154 @@ async function openMemberBlog() {
   await browser.close();
   console.log(chalk.green("✓ ブラウザを閉じました"));
 
-  // 3秒後に自動的にメインメニューに戻る
-  console.log(chalk.gray("\n3秒後にメインメニューに戻ります..."));
-  await new Promise((resolve) => setTimeout(resolve, 3000));
+  // メインメニューに戻る確認
+  console.log(chalk.yellow("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
+  await inquirer.prompt([
+    {
+      type: "confirm",
+      name: "backToMenu",
+      message: "処理が完了しました。メインメニューに戻ります",
+      default: true,
+    },
+  ]);
+
   return false;
 }
 
 async function scrapeKeyakiMemberBlog() {
-  console.log(
-    chalk.yellow("\n欅坂46メンバーで欅坂46時代のブログがあるメンバー:")
-  );
-
   const availableMembers = Object.keys(KEYAKI_MEMBER_MAP);
-  availableMembers.forEach((name, index) => {
-    console.log(`${index + 1}. ${name}`);
-  });
 
-  const choices = availableMembers.map((name) => ({
-    name: `${name} (欅坂46時代)`,
-    value: name,
-  }));
-
-  const { selectedMemberName } = await inquirer.prompt([
+  // 選択方法を聞く
+  const { method } = await inquirer.prompt([
     {
       type: "list",
-      name: "selectedMemberName",
-      message: "\n欅坂46のブログをスクレイピングするメンバーを選択:",
-      choices: [...choices, { name: "← Back", value: null }],
-      pageSize: 15,
+      name: "method",
+      message: "\nメンバー選択方法:",
+      choices: [
+        { name: "📝 番号を入力して選択（高速）", value: "number" },
+        { name: "🔍 名前で検索して選択", value: "search" },
+        { name: "📋 一覧から選択", value: "list" },
+        { name: "← Back", value: "back" },
+      ],
     },
   ]);
+
+  if (method === "back") return false;
+
+  let selectedMemberName = null;
+
+  if (method === "number") {
+    // 番号入力方式
+    console.log(chalk.cyan("\n=== 欅坂46メンバー一覧 ==="));
+    availableMembers.forEach((name, index) => {
+      console.log(chalk.gray(`${index + 1}. ${name}`));
+    });
+    console.log(chalk.gray(`0. ← Back\n`));
+
+    const { memberNumber } = await inquirer.prompt([
+      {
+        type: "input",
+        name: "memberNumber",
+        message: "番号を入力してください:",
+        validate: (value) => {
+          const num = parseInt(value);
+          if (value === "0") return true;
+          if (isNaN(num) || num < 1 || num > availableMembers.length) {
+            return `1-${availableMembers.length}の数値、または0（戻る）を入力してください`;
+          }
+          return true;
+        },
+      },
+    ]);
+
+    const num = parseInt(memberNumber);
+    if (num === 0) return false;
+    selectedMemberName = availableMembers[num - 1];
+  } else if (method === "search") {
+    // 検索方式
+    const { searchTerm } = await inquirer.prompt([
+      {
+        type: "input",
+        name: "searchTerm",
+        message: "メンバー名を入力してください（部分一致）:",
+        validate: (value) =>
+          value.trim().length > 0 || "1文字以上入力してください",
+      },
+    ]);
+
+    const filtered = availableMembers.filter((name) =>
+      name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    if (filtered.length === 0) {
+      console.log(chalk.red("該当するメンバーが見つかりませんでした"));
+      return await scrapeKeyakiMemberBlog(); // 再度選択
+    }
+
+    console.log(chalk.green(`\n${filtered.length}件見つかりました:\n`));
+    filtered.forEach((name, index) => {
+      console.log(`${index + 1}. ${name}`);
+    });
+    console.log(chalk.gray(`0. ← やり直す\n`));
+
+    if (filtered.length === 1) {
+      const { confirm } = await inquirer.prompt([
+        {
+          type: "confirm",
+          name: "confirm",
+          message: `${filtered[0]}を選択しますか？`,
+          default: true,
+        },
+      ]);
+
+      if (confirm) {
+        selectedMemberName = filtered[0];
+      } else {
+        return await scrapeKeyakiMemberBlog();
+      }
+    } else {
+      // 複数見つかった場合は番号入力方式
+      const { memberNumber } = await inquirer.prompt([
+        {
+          type: "input",
+          name: "memberNumber",
+          message: "番号を入力してください:",
+          validate: (value) => {
+            const num = parseInt(value);
+            if (value === "0") return true;
+            if (isNaN(num) || num < 1 || num > filtered.length) {
+              return `1-${filtered.length}の数値、または0（やり直す）を入力してください`;
+            }
+            return true;
+          },
+        },
+      ]);
+
+      const num = parseInt(memberNumber);
+      if (num === 0) return await scrapeKeyakiMemberBlog();
+      selectedMemberName = filtered[num - 1];
+    }
+  } else {
+    // 一覧選択方式（従来通り）
+    const choices = availableMembers.map((name) => ({
+      name: `${name} (欅坂46時代)`,
+      value: name,
+    }));
+
+    const { selected } = await inquirer.prompt([
+      {
+        type: "list",
+        name: "selected",
+        message: "\n欅坂46のブログをスクレイピングするメンバーを選択:",
+        choices: [...choices, { name: "← Back", value: null }],
+        pageSize: 15,
+        loop: false,
+      },
+    ]);
+
+    if (!selected) return false;
+    selectedMemberName = selected;
+  }
 
   if (!selectedMemberName) return false; // 戻るが選択された
 
@@ -175,23 +402,88 @@ async function scrapeKeyakiMemberBlog() {
   ]);
 
   const limit = postCount === "all" ? "all" : parseInt(postCount);
+
+  // 日付範囲フィルタリングの確認
+  const { useDateFilter } = await inquirer.prompt([
+    {
+      type: "confirm",
+      name: "useDateFilter",
+      message: "日付で絞り込みますか？",
+      default: false,
+    },
+  ]);
+
+  let dateFrom = null;
+  let dateTo = null;
+
+  if (useDateFilter) {
+    const dateAnswers = await inquirer.prompt([
+      {
+        type: "input",
+        name: "dateFrom",
+        message: "開始日 (YYYY-MM-DD, 空白で指定なし):",
+        default: "",
+        validate: (value) => {
+          if (!value.trim()) return true;
+          const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+          if (!dateRegex.test(value)) {
+            return "YYYY-MM-DD形式で入力してください（例: 2018-01-01）";
+          }
+          const date = new Date(value);
+          if (isNaN(date.getTime())) {
+            return "有効な日付を入力してください";
+          }
+          return true;
+        },
+      },
+      {
+        type: "input",
+        name: "dateTo",
+        message: "終了日 (YYYY-MM-DD, 空白で指定なし):",
+        default: "",
+        validate: (value) => {
+          if (!value.trim()) return true;
+          const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+          if (!dateRegex.test(value)) {
+            return "YYYY-MM-DD形式で入力してください（例: 2020-12-31）";
+          }
+          const date = new Date(value);
+          if (isNaN(date.getTime())) {
+            return "有効な日付を入力してください";
+          }
+          return true;
+        },
+      },
+    ]);
+
+    dateFrom = dateAnswers.dateFrom.trim() || null;
+    dateTo = dateAnswers.dateTo.trim() || null;
+  }
+
   const { downloadImages } = await inquirer.prompt([
     {
       type: "confirm",
       name: "downloadImages",
       message: "画像をダウンロードしますか？",
-      default: false,
+      default: true,
     },
   ]);
 
   const displayCount = limit === "all" ? "全件" : `${limit}件`;
+  const dateRangeMsg =
+    dateFrom || dateTo
+      ? ` (${dateFrom || "指定なし"} 〜 ${dateTo || "指定なし"})`
+      : "";
   console.log(
     chalk.yellow(
-      `\n${selectedMemberName}さんの欅坂46ブログ記事を${displayCount}スクレイピング中...`
+      `\n${selectedMemberName}さんの欅坂46ブログ記事を${displayCount}スクレイピング中...${dateRangeMsg}`
     )
   );
 
-  const posts = await scrapeKeyakiBlogPosts(selectedMemberName, limit);
+  const posts = await scrapeKeyakiBlogPosts(selectedMemberName, limit, {
+    dateFrom,
+    dateTo,
+  });
 
   if (posts.length > 0) {
     console.log(chalk.green(`✓ Scraped ${posts.length} Keyaki posts`));
@@ -232,7 +524,6 @@ async function scrapeKeyakiMemberBlog() {
       }
 
       // 画像をダウンロードした場合、ローカル画像パスも保存
-      console.log(chalk.yellow("ローカル画像パスを更新中..."));
       for (const post of posts) {
         if (post.localImages && post.localImages.length > 0) {
           await db.updateBlogPostImages(post.url, post.localImages);
@@ -245,7 +536,7 @@ async function scrapeKeyakiMemberBlog() {
         type: "confirm",
         name: "showPosts",
         message: "Display scraped posts?",
-        default: true,
+        default: false,
       },
     ]);
 
@@ -263,9 +554,17 @@ async function scrapeKeyakiMemberBlog() {
     console.log(chalk.red("No Keyaki posts were scraped"));
   }
 
-  // 3秒後に自動的にメインメニューに戻る
-  console.log(chalk.gray("\n3秒後にメインメニューに戻ります..."));
-  await new Promise((resolve) => setTimeout(resolve, 3000));
+  // メインメニューに戻る確認
+  console.log(chalk.yellow("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
+  await inquirer.prompt([
+    {
+      type: "confirm",
+      name: "backToMenu",
+      message: "処理が完了しました。メインメニューに戻ります",
+      default: true,
+    },
+  ]);
+
   return false;
 }
 
@@ -291,23 +590,88 @@ async function scrapeMemberBlog() {
   ]);
 
   const limit = postCount === "all" ? "all" : parseInt(postCount);
+
+  // 日付範囲フィルタリングの確認
+  const { useDateFilter } = await inquirer.prompt([
+    {
+      type: "confirm",
+      name: "useDateFilter",
+      message: "日付で絞り込みますか？",
+      default: false,
+    },
+  ]);
+
+  let dateFrom = null;
+  let dateTo = null;
+
+  if (useDateFilter) {
+    const dateAnswers = await inquirer.prompt([
+      {
+        type: "input",
+        name: "dateFrom",
+        message: "開始日 (YYYY-MM-DD, 空白で指定なし):",
+        default: "",
+        validate: (value) => {
+          if (!value.trim()) return true; // 空白はOK
+          const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+          if (!dateRegex.test(value)) {
+            return "YYYY-MM-DD形式で入力してください（例: 2024-01-01）";
+          }
+          const date = new Date(value);
+          if (isNaN(date.getTime())) {
+            return "有効な日付を入力してください";
+          }
+          return true;
+        },
+      },
+      {
+        type: "input",
+        name: "dateTo",
+        message: "終了日 (YYYY-MM-DD, 空白で指定なし):",
+        default: "",
+        validate: (value) => {
+          if (!value.trim()) return true; // 空白はOK
+          const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+          if (!dateRegex.test(value)) {
+            return "YYYY-MM-DD形式で入力してください（例: 2024-12-31）";
+          }
+          const date = new Date(value);
+          if (isNaN(date.getTime())) {
+            return "有効な日付を入力してください";
+          }
+          return true;
+        },
+      },
+    ]);
+
+    dateFrom = dateAnswers.dateFrom.trim() || null;
+    dateTo = dateAnswers.dateTo.trim() || null;
+  }
+
   const { downloadImages } = await inquirer.prompt([
     {
       type: "confirm",
       name: "downloadImages",
       message: "画像をダウンロードしますか？",
-      default: false,
+      default: true,
     },
   ]);
 
   const displayCount = limit === "all" ? "全件" : `${limit}件`;
+  const dateRangeMsg =
+    dateFrom || dateTo
+      ? ` (${dateFrom || "指定なし"} 〜 ${dateTo || "指定なし"})`
+      : "";
   console.log(
     chalk.yellow(
-      `\n${member.name}さんのブログ記事を${displayCount}スクレイピング中...`
+      `\n${member.name}さんのブログ記事を${displayCount}スクレイピング中...${dateRangeMsg}`
     )
   );
 
-  const posts = await scrapeBlogPosts(member.id, member.name, limit);
+  const posts = await scrapeBlogPosts(member.id, member.name, limit, {
+    dateFrom,
+    dateTo,
+  });
 
   if (posts.length > 0) {
     console.log(chalk.green(`✓ Scraped ${posts.length} posts`));
@@ -346,7 +710,6 @@ async function scrapeMemberBlog() {
       }
 
       // 画像をダウンロードした場合、ローカル画像パスも保存
-      console.log(chalk.yellow("ローカル画像パスを更新中..."));
       for (const post of posts) {
         if (post.localImages && post.localImages.length > 0) {
           await db.updateBlogPostImages(post.url, post.localImages);
@@ -359,7 +722,7 @@ async function scrapeMemberBlog() {
         type: "confirm",
         name: "showPosts",
         message: "Display scraped posts?",
-        default: true,
+        default: false,
       },
     ]);
 
@@ -376,9 +739,17 @@ async function scrapeMemberBlog() {
     console.log(chalk.red("No posts were scraped"));
   }
 
-  // 3秒後に自動的にメインメニューに戻る
-  console.log(chalk.gray("\n3秒後にメインメニューに戻ります..."));
-  await new Promise((resolve) => setTimeout(resolve, 3000));
+  // メインメニューに戻る確認
+  console.log(chalk.yellow("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
+  await inquirer.prompt([
+    {
+      type: "confirm",
+      name: "backToMenu",
+      message: "処理が完了しました。メインメニューに戻ります",
+      default: true,
+    },
+  ]);
+
   return false;
 }
 
@@ -410,25 +781,47 @@ async function searchBlogPosts() {
     console.log(chalk.red("No posts found"));
   }
 
-  // 結果を表示した後、自動的にメインメニューに戻る
-  console.log(chalk.gray("\n3秒後にメインメニューに戻ります..."));
-  await new Promise((resolve) => setTimeout(resolve, 3000));
-  return false;
+  // 結果を表示した後、メインメニューに戻る確認
+  console.log(
+    chalk.yellow("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+  );
+  await inquirer.prompt([
+    {
+      type: "confirm",
+      name: "backToMenu",
+      message: "検索結果を確認しました。メインメニューに戻りますか？",
+      default: true,
+    },
+  ]);
+
+  return false; // shouldWaitはfalseのまま（inquirerで待機済み）
 }
 
 async function startWebViewer() {
   console.log(chalk.yellow("\nWebページビューアーを起動中..."));
   startServer();
-  console.log(chalk.green("\n✓ Webサーバーが起動しました"));
-  console.log(
-    chalk.cyan("  ブラウザで http://localhost:3000 にアクセスしてください")
-  );
-  console.log(chalk.gray("  サーバーはバックグラウンドで動作し続けます"));
 
-  // 3秒後に自動的にメインメニューに戻る
-  console.log(chalk.gray("\n3秒後にメインメニューに戻ります..."));
-  await new Promise((resolve) => setTimeout(resolve, 3000));
-  return false;
+  // サーバーの起動メッセージが完全に表示されるまで待機
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  console.log(chalk.green("\n✓ Webサーバーが起動しました"));
+
+  // メインメニューに戻る確認（分かりやすいメッセージ）
+  console.log(
+    chalk.yellow(
+      "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+  );
+  await inquirer.prompt([
+    {
+      type: "confirm",
+      name: "backToMenu",
+      message: "サーバー起動を確認しました。メインメニューに戻りますか？",
+      default: true,
+    },
+  ]);
+
+  return false; // shouldWaitはfalseのまま（inquirerで待機済み）
 }
 
 async function main() {

@@ -32,9 +32,10 @@ Thumbs.db
 *.swo
 *~
 
-# Temporary files
+# Temporary directories/files
 *.tmp
 temp/
+tmp/
 
 # Backup files
 *.db-bk*
@@ -42,5 +43,13 @@ temp/
 # Cache files
 *_cache.json
 
-# Temporary directories
-tmp/
+# debug files
+*debug*
+*test*
+
+# other files
+*estimate*
+REFACTORING.md
+
+# legacy files
+legacy_backup/

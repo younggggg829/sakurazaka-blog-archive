@@ -1,110 +1,42 @@
 const { chromium } = require("playwright");
+const { parseBlogDate, isDateInRange } = require('./utils/dateUtils');
+const { smartDelay, logScrapingStats, resetRateLimitState, incrementRequestCount } = require('./utils/scraperUtils');
+const { IMAGE_EXCLUDE_PATTERNS, KEYAKIZAKA_SELECTORS, SITE_URLS, TIMEOUTS, PAGINATION, KEYAKI_MEMBER_MAP } = require('./utils/constants');
+const { cleanHTMLContent } = require('./utils/formatting');
 
-// レート制限設定（櫻坂と同じ）
-const RATE_LIMIT = {
-  REQUESTS_PER_MINUTE: 15,
-  MIN_DELAY: 2000,
-  MAX_DELAY: 4000,
-  BURST_LIMIT: 10,
-  LONG_BREAK: 5000,
-};
-
-let requestCount = 0;
-let lastRequestTime = 0;
-let startTime = Date.now();
-
-async function smartDelay(requestNumber) {
-  const now = Date.now();
-  const timeSinceStart = now - startTime;
-  const timeSinceLastRequest = now - lastRequestTime;
-
-  if (requestNumber > 0 && requestNumber % RATE_LIMIT.BURST_LIMIT === 0) {
-    console.log(
-      `  ⏸️  ${RATE_LIMIT.BURST_LIMIT}件処理完了 - ${
-        RATE_LIMIT.LONG_BREAK / 1000
-      }秒休憩中...`
-    );
-    await new Promise((resolve) => setTimeout(resolve, RATE_LIMIT.LONG_BREAK));
-    lastRequestTime = Date.now();
-    return;
-  }
-
-  // 最低10秒経過してからレート制限チェック（初期の誤検知を防ぐ）
-  if (timeSinceStart > 10000) {
-    const requestsPerMinute = requestCount / (timeSinceStart / 60000);
-    if (requestsPerMinute > RATE_LIMIT.REQUESTS_PER_MINUTE) {
-      const waitTime = 60000 - (timeSinceStart % 60000);
-      console.log(`  ⏳ レート制限: ${Math.ceil(waitTime / 1000)}秒待機中...`);
-      await new Promise((resolve) => setTimeout(resolve, waitTime));
-    }
-  }
-
-  const minWaitTime = RATE_LIMIT.MIN_DELAY - timeSinceLastRequest;
-  if (minWaitTime > 0) {
-    await new Promise((resolve) => setTimeout(resolve, minWaitTime));
-  }
-
-  const randomDelay =
-    RATE_LIMIT.MIN_DELAY +
-    Math.random() * (RATE_LIMIT.MAX_DELAY - RATE_LIMIT.MIN_DELAY);
-  await new Promise((resolve) => setTimeout(resolve, randomDelay));
-
-  lastRequestTime = Date.now();
-}
-
-// 欅坂46メンバーIDマッピング（櫻坂46メンバーの欅坂時代のID）
-// 2025-10-23 更新: 欅坂46公式サイトから正しいIDを取得
-const KEYAKI_MEMBER_MAP = {
-  "上村 莉菜": "03",
-  "尾関 梨香": "04",
-  "小池 美波": "06",
-  "小林 由依": "07",
-  "齋藤 冬優花": "08",
-  "菅井 友香": "11",
-  "土生 瑞穂": "14",
-  "原田 葵": "15",
-  "守屋 茜": "18",
-  "渡辺 梨加": "20",
-  "渡邉 理佐": "21",
-  "井上 梨名": "43",
-  "関 有美子": "44",
-  "武元 唯衣": "45",
-  "田村 保乃": "46",
-  "藤吉 夏鈴": "47",
-  "松田 里奈": "48",
-  "松平 璃子": "49",
-  "森田 ひかる": "50",
-  "山﨑 天": "51",
-  "遠藤 光莉": "53",
-  "大園 玲": "54",
-  "大沼 晶保": "55",
-  "幸阪 茉里乃": "56",
-  "増本 綺良": "57",
-  "守屋 麗奈": "58",
-};
-
-// リストページから全投稿URLを収集（ページネーション対応）
-async function collectAllPostUrls(page, memberId, memberName, limit = null) {
+/**
+ * リストページから全投稿URLを収集（ページネーション対応）
+ * @param {object} page - Playwrightページオブジェクト
+ * @param {string} memberId - メンバーID
+ * @param {string} memberName - メンバー名
+ * @param {number|null} limit - 取得件数制限（nullの場合は全件取得）
+ * @param {string|null} dateFrom - 開始日 "YYYY-MM-DD"
+ * @param {string|null} dateTo - 終了日 "YYYY-MM-DD"
+ * @returns {Promise<Array>} 投稿情報の配列
+ */
+async function collectAllPostUrls(page, memberId, memberName, limit = null, dateFrom = null, dateTo = null) {
   const allPostUrls = [];
   let currentPage = 0;
-  const maxPages = 100; // 最大100ページまで
-  const needAll = limit === null; // limitがnullなら全件取得
+  const maxPages = PAGINATION.MAX_PAGES_SCRAPING;
+  const needAll = limit === null;
+
+  console.log(`  📅 日付範囲: ${dateFrom || '指定なし'} 〜 ${dateTo || '指定なし'}`);
 
   while (currentPage < maxPages) {
-    const listUrl = `https://www.keyakizaka46.com/s/k46o/diary/member/list?ima=0000&page=${currentPage}&ct=${memberId}`;
+    const listUrl = SITE_URLS.KEYAKIZAKA46_BLOG_LIST(memberId, currentPage);
 
     if (currentPage > 0) {
       await smartDelay(currentPage - 1);
     }
 
-    await page.goto(listUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(1500);
-    requestCount++;
+    await page.goto(listUrl, { waitUntil: "domcontentloaded", timeout: TIMEOUTS.PAGE_LOAD });
+    await page.waitForTimeout(TIMEOUTS.PAGE_WAIT_MEDIUM);
+    incrementRequestCount();
 
-    const pageUrls = await page.evaluate(() => {
+    const pageUrls = await page.evaluate((selectors) => {
       const urls = [];
       const uniqueUrls = new Set();
-      const allLinks = document.querySelectorAll("a[href*='/diary/detail/']");
+      const allLinks = document.querySelectorAll(selectors.POST_LINK);
 
       // サイドバーを除外してURLを収集
       for (const link of allLinks) {
@@ -136,7 +68,7 @@ async function collectAllPostUrls(page, memberId, memberName, limit = null) {
               postContainer = postContainer.parentElement;
               if (!postContainer) break;
 
-              const boxBottom = postContainer.querySelector(".box-bottom");
+              const boxBottom = postContainer.querySelector(selectors.POST_DATE_CONTAINER);
               if (boxBottom) {
                 const dateMatch = boxBottom.textContent.match(/(\d{4})\/(\d{2})\/(\d{2})/);
                 if (dateMatch) {
@@ -152,17 +84,43 @@ async function collectAllPostUrls(page, memberId, memberName, limit = null) {
       }
 
       return urls;
-    });
+    }, KEYAKIZAKA_SELECTORS);
 
     if (pageUrls.length === 0) {
       break;
     }
 
-    allPostUrls.push(...pageUrls);
+    // 日付範囲でフィルタリング
+    const filteredUrls = pageUrls.filter(item =>
+      isDateInRange(item.date, dateFrom, dateTo)
+    );
 
-    // limit指定時、必要件数に達したら即座に終了
-    if (!needAll && allPostUrls.length >= limit) {
-      break;
+    allPostUrls.push(...filteredUrls);
+
+    // 日付範囲指定がある場合の終了条件チェック
+    if (dateFrom || dateTo) {
+      // 範囲より古い記事に達したかチェック
+      if (dateFrom) {
+        const oldestPostOnPage = pageUrls[pageUrls.length - 1];
+        const oldestDate = parseBlogDate(oldestPostOnPage?.date);
+        const fromDate = new Date(dateFrom);
+
+        // ページの最も古い記事が開始日より前なら、これ以降のページは不要
+        if (oldestDate && oldestDate < fromDate) {
+          console.log(`  ℹ️  指定期間より古い記事に到達しました（最古: ${oldestPostOnPage.date}）`);
+          break;
+        }
+      }
+
+      // limit指定時、必要件数に達したら終了
+      if (!needAll && allPostUrls.length >= limit) {
+        break;
+      }
+    } else {
+      // 日付範囲指定なしの場合、limit指定時に必要件数に達したら即座に終了
+      if (!needAll && allPostUrls.length >= limit) {
+        break;
+      }
     }
 
     // 次のページがあるかチェック（簡易版：URLが20件未満なら最終ページ）
@@ -173,22 +131,27 @@ async function collectAllPostUrls(page, memberId, memberName, limit = null) {
     currentPage++;
   }
 
+  console.log(`  ✓ 合計 ${allPostUrls.length} 件の記事を収集しました`);
   return allPostUrls;
 }
 
-// 個別ページから投稿内容を取得
+/**
+ * 個別ページから投稿内容を取得
+ * @param {object} page - Playwrightページオブジェクト
+ * @param {string} url - 投稿URL
+ * @returns {Promise<object>} 投稿データ {title, date, content, images}
+ */
 async function scrapePostDetail(page, url) {
   await page.goto(url, {
     waitUntil: "domcontentloaded",
-    timeout: 30000,
+    timeout: TIMEOUTS.PAGE_LOAD,
   });
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(TIMEOUTS.PAGE_WAIT_SHORT);
 
-  const postData = await page.evaluate(() => {
+  const postData = await page.evaluate(({ selectors, excludePatterns }) => {
     // タイトルを取得
     let title = "";
-    const titleSelectors = [".box-ttl", "h1.title", "h1", ".blog-title"];
-    for (const selector of titleSelectors) {
+    for (const selector of selectors.DETAIL_TITLE) {
       const elem = document.querySelector(selector);
       if (elem && elem.textContent.trim()) {
         title = elem.textContent.trim();
@@ -203,9 +166,9 @@ async function scrapePostDetail(page, url) {
 
     // 日付を取得
     let date = "";
-    const yearEl = document.querySelector(".year");
-    const monthEl = document.querySelector(".month");
-    const dayEl = document.querySelector(".day");
+    const yearEl = document.querySelector(selectors.DETAIL_DATE_YEAR);
+    const monthEl = document.querySelector(selectors.DETAIL_DATE_MONTH);
+    const dayEl = document.querySelector(selectors.DETAIL_DATE_DAY);
 
     if (yearEl && monthEl && dayEl) {
       const year = yearEl.textContent.trim();
@@ -225,13 +188,7 @@ async function scrapePostDetail(page, url) {
 
     // 本文を取得
     let content = "";
-    const contentSelectors = [
-      ".box-article",
-      ".box--body",
-      ".blog-body",
-      ".blog-content",
-    ];
-    for (const selector of contentSelectors) {
+    for (const selector of selectors.DETAIL_CONTENT) {
       const element = document.querySelector(selector);
       if (element && element.textContent.trim().length > 20) {
         content = element.innerHTML
@@ -246,23 +203,14 @@ async function scrapePostDetail(page, url) {
     const images = [];
     const imageSet = new Set();
     const blogContainer =
-      document.querySelector(".box-article, .box--body") || document.body;
+      document.querySelector(selectors.BLOG_CONTAINER.split(',')[0]) ||
+      document.querySelector(selectors.BLOG_CONTAINER.split(',')[1]) ||
+      document.body;
     const imgElements = blogContainer.querySelectorAll("img");
 
     imgElements.forEach((img) => {
       const src = img.getAttribute("src");
       if (src && !imageSet.has(src)) {
-        const excludePatterns = [
-          "icon",
-          "logo",
-          "header",
-          "footer",
-          "nav",
-          "menu",
-          "app_",
-          "jasrac",
-          "twemoji", // 絵文字画像を除外
-        ];
         const isExcluded = excludePatterns.some((pattern) =>
           src.toLowerCase().includes(pattern)
         );
@@ -283,21 +231,28 @@ async function scrapePostDetail(page, url) {
       content,
       images,
     };
-  });
+  }, { selectors: KEYAKIZAKA_SELECTORS, excludePatterns: IMAGE_EXCLUDE_PATTERNS });
 
   return postData;
 }
 
-async function scrapeKeyakiBlogPosts(memberName, limit = 10) {
+/**
+ * 欅坂46のブログ投稿をスクレイピング
+ * @param {string} memberName - メンバー名
+ * @param {number|string} limit - 取得件数制限（'all'の場合は全件取得）
+ * @param {object} options - オプション {dateFrom, dateTo}
+ * @returns {Promise<Array>} スクレイピングされたブログ投稿の配列
+ */
+async function scrapeKeyakiBlogPosts(memberName, limit = 10, options = {}) {
+  const { dateFrom = null, dateTo = null } = options;
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   const blogPosts = [];
 
   try {
     // レート制限変数をリセット
-    requestCount = 0;
-    startTime = Date.now();
-    lastRequestTime = 0;
+    resetRateLimitState();
+    const startTime = Date.now();
 
     // メンバーIDを取得
     const memberId = KEYAKI_MEMBER_MAP[memberName];
@@ -317,8 +272,7 @@ async function scrapeKeyakiBlogPosts(memberName, limit = 10) {
     const targetLimit = isAll ? null : limit;
 
     // ステップ1: 全投稿URLを収集
-    // limitを渡して必要件数だけ収集
-    const allPostUrls = await collectAllPostUrls(page, memberId, memberName, targetLimit);
+    const allPostUrls = await collectAllPostUrls(page, memberId, memberName, targetLimit, dateFrom, dateTo);
 
     if (allPostUrls.length === 0) {
       console.log("  ⚠️ 投稿が見つかりませんでした");
@@ -337,7 +291,7 @@ async function scrapeKeyakiBlogPosts(memberName, limit = 10) {
       const listDate = post.date; // リストページから取得した日付
 
       await smartDelay(index);
-      requestCount++;
+      incrementRequestCount();
 
       console.log(
         `  📄 [${index + 1}/${postsToProcess.length}] スクレイピング中...`
@@ -361,15 +315,7 @@ async function scrapeKeyakiBlogPosts(memberName, limit = 10) {
       }
     }
 
-    const totalTime = (Date.now() - startTime) / 1000;
-    console.log(
-      `✨ スクレイピング完了: ${blogPosts.length}件 (${totalTime.toFixed(1)}秒)`
-    );
-    console.log(
-      `📊 平均処理時間: ${(totalTime / Math.max(blogPosts.length, 1)).toFixed(
-        1
-      )}秒/件`
-    );
+    logScrapingStats(blogPosts.length, startTime);
 
     await browser.close();
     return blogPosts;

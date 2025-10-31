@@ -3,9 +3,20 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
+const { StorageAdapterFactory } = require('./storageAdapter');
+const config = require('./config');
 
-// 画像保存ディレクトリ
-const IMAGE_DIR = path.join(__dirname, 'images');
+// Storage Adapterの初期化
+const storageConfig = {
+  type: config.storage.type,
+  baseDir: config.storage.local.baseDir
+};
+
+const storage = StorageAdapterFactory.create(storageConfig);
+
+// 画像保存ディレクトリ（相対パス）
+const IMAGES_DIR_RELATIVE = config.storage.local.imagesDir;
+const IMAGE_DIR = path.join(config.storage.local.baseDir, IMAGES_DIR_RELATIVE);
 const CACHE_FILE = path.join(__dirname, 'image_cache.json');
 
 // ディレクトリが存在しない場合は作成
@@ -123,11 +134,14 @@ async function downloadImageOptimized(imageUrl, memberId, postId, memberName = n
         const filename = `post_${cleanPostId}_${urlHash.substring(0, 8)}${extension}`;
         const filepath = path.join(memberDir, filename);
 
+        // 相対パスを計算（データベース保存用）
+        const relativePath = path.join(IMAGES_DIR_RELATIVE, folderName, filename);
+
         // すでに存在する場合（レースコンディション対策）
         if (fs.existsSync(filepath)) {
           const stats = fs.statSync(filepath);
-          imageCache.set(imageUrl, filepath, { size: stats.size }, memberId, postId);
-          resolve(filepath);
+          imageCache.set(imageUrl, relativePath, { size: stats.size }, memberId, postId);
+          resolve(relativePath);
           return;
         }
 
@@ -170,11 +184,11 @@ async function downloadImageOptimized(imageUrl, memberId, postId, memberName = n
           file.on('finish', () => {
             file.close();
             const stats = fs.statSync(filepath);
-            imageCache.set(imageUrl, filepath, {
+            imageCache.set(imageUrl, relativePath, {
               size: stats.size
             }, memberId, postId);
             console.log(`  ✅ 保存完了: ${filename} (${(stats.size / 1024).toFixed(1)}KB)`);
-            resolve(filepath);
+            resolve(relativePath);
           });
         });
 
@@ -367,5 +381,7 @@ module.exports = {
   downloadImagesOptimized,
   getImageStatsOptimized,
   cleanupCache,
-  IMAGE_DIR
+  IMAGE_DIR,
+  storage,  // Storage Adapterをエクスポート
+  IMAGES_DIR_RELATIVE
 };

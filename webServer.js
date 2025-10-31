@@ -2,6 +2,31 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const config = require('./config');
+const { StorageAdapterFactory } = require('./storageAdapter');
+const { parsePostDate, formatDate, isDateInRange } = require('./utils/dateUtils');
+const { cleanTextPreview, decodeHTMLEntities, formatFileSize } = require('./utils/formatting');
+const { PAGINATION } = require('./utils/constants');
+
+// Storage Adapterの初期化
+const storage = StorageAdapterFactory.create({
+  type: config.storage.type,
+  baseDir: config.storage.local.baseDir
+});
+
+/**
+ * 環境に応じた画像ベースURLを取得
+ * @returns {string} 画像のベースURL
+ */
+function getImageBaseUrl() {
+  if (config.storage.type === 's3' && config.storage.s3.baseUrl) {
+    // S3モード：CloudFront URLまたはS3 URL
+    return config.storage.s3.baseUrl;
+  } else {
+    // ローカルモード：相対URL
+    return '/images';
+  }
+}
 
 // Google Services または SQLite の自動選択
 let dataService;
@@ -20,14 +45,56 @@ if (fs.existsSync('config.json')) {
   console.log('🟡 SQLite モードで起動します');
 }
 
+// 投稿の画像から総サイズを計算する関数
+function calculateImageSize(posts) {
+  let totalSize = 0;
+  let imageCount = 0;
+  let foundCount = 0;
+
+  posts.forEach((post, idx) => {
+    // local_imagesを優先的に使用（ローカルパスを格納）
+    const imageSource = post.local_images || post.images;
+    if (!imageSource) return;
+
+    const images = Array.isArray(imageSource) ? imageSource : imageSource.split(',');
+
+    images.forEach(imgPath => {
+      if (!imgPath) return;
+
+      imageCount++;
+      // 画像パスをトリム
+      const cleanPath = imgPath.trim();
+
+      // 絶対パスまたは相対パスとして処理
+      // local_path例: "images/藤吉 夏鈴_sakurazaka46/post_59953_c5079658.jpg"
+      const fullPath = cleanPath.startsWith('/') ?
+        cleanPath :
+        path.join(__dirname, cleanPath);
+
+      try {
+        if (fs.existsSync(fullPath)) {
+          const stats = fs.statSync(fullPath);
+          totalSize += stats.size;
+          foundCount++;
+        }
+      } catch (error) {
+        // ファイルアクセスエラーは無視
+      }
+    });
+  });
+
+  return totalSize;
+}
+
 const app = express();
-const PORT = 3000;
+const PORT = config.server.port;
 
 // 静的ファイルの配信
 if (fs.existsSync('config.json')) {
   // Google Drive モードでは静的ファイル配信は不要
 } else {
   const { IMAGE_DIR } = require('./imageDownloader');
+  // Storage Adapterを使った画像配信
   app.use('/images', express.static(IMAGE_DIR));
 }
 app.use(express.static('public'));
@@ -37,45 +104,7 @@ app.use(express.json()); // JSONパラメータのパース
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// 日付解析関数
-function parsePostDate(dateStr) {
-  if (!dateStr) return new Date('1970-01-01');
-
-  // スラッシュ区切りの日付形式 (YYYY/MM/DD)
-  if (dateStr.includes('/')) {
-    const parts = dateStr.split('/');
-    if (parts.length === 3) {
-      const year = parseInt(parts[0]);
-      const month = parseInt(parts[1]) - 1; // 月は0ベース
-      const day = parseInt(parts[2]);
-      return new Date(year, month, day);
-    }
-  }
-
-  // ハイフン区切りの日付形式 (YYYY-MM-DD)
-  if (dateStr.includes('-')) {
-    const parts = dateStr.split('-');
-    if (parts.length === 3) {
-      const year = parseInt(parts[0]);
-      const month = parseInt(parts[1]) - 1; // 月は0ベース
-      const day = parseInt(parts[2]);
-      return new Date(year, month, day);
-    }
-  }
-
-  // 数字のみの場合（日付のみ）、現在の年月として解釈
-  if (/^\d+$/.test(dateStr)) {
-    const day = parseInt(dateStr);
-    if (day >= 1 && day <= 31) {
-      const now = new Date();
-      return new Date(now.getFullYear(), now.getMonth(), day);
-    }
-  }
-
-  // その他の形式の場合、Date.parseで試みる
-  const parsed = new Date(dateStr);
-  return isNaN(parsed.getTime()) ? new Date('1970-01-01') : parsed;
-}
+// parsePostDate, formatDate, isDateInRange は utils/dateUtils.js からインポート
 
 // 高度な検索関数
 async function performAdvancedSearch(options) {
@@ -88,7 +117,7 @@ async function performAdvancedSearch(options) {
     if (keyword) {
       posts = await dataService.searchBlogPosts(keyword);
     } else {
-      // キーワードがない場合は全記事取得
+      // キーワードがない場合は全ブログ取得
       posts = await dataService.getBlogPosts(null, 10000);
     }
 
@@ -153,67 +182,7 @@ async function performAdvancedSearch(options) {
   }
 }
 
-// 日付フォーマット関数
-function formatDate(dateStr) {
-  if (!dateStr) return '';
-
-  // 既に正しい形式の場合はそのまま返す
-  if (dateStr.match(/\d{4}\/\d{1,2}\/\d{1,2}/)) {
-    return dateStr;
-  }
-
-  // 数字のみの場合の処理
-  if (dateStr.match(/^\d+$/)) {
-    const num = parseInt(dateStr);
-    if (num >= 1 && num <= 31) {
-      const now = new Date();
-      return `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(num).padStart(2, '0')}`;
-    }
-  }
-
-  // 年月日パターンをYYYY/MM/DD形式に統一
-  return dateStr.replace(/(\d{4})[年\-\.](\d{1,2})[月\-\.](\d{1,2})[日]?/, '$1/$2/$3');
-}
-
-// HTMLエンティティをデコードする関数
-function decodeHTMLEntities(text) {
-  if (!text) return '';
-
-  const entities = {
-    '&nbsp;': ' ',
-    '&amp;': '&',
-    '&lt;': '<',
-    '&gt;': '>',
-    '&quot;': '"',
-    '&#39;': "'",
-    '&apos;': "'"
-  };
-
-  return text.replace(/&[^;]+;/g, function(entity) {
-    return entities[entity] || entity;
-  });
-}
-
-// テキストをクリーンにする関数（HTMLタグ削除 + エンティティデコード）
-function cleanTextPreview(html, maxLength = 150) {
-  if (!html) return '';
-
-  // HTMLタグを削除
-  let text = html.replace(/<[^>]*>/g, '');
-
-  // HTMLエンティティをデコード
-  text = decodeHTMLEntities(text);
-
-  // 空白を整理
-  text = text.replace(/\s+/g, ' ').trim();
-
-  // 長さ制限
-  if (text.length > maxLength) {
-    return text.substring(0, maxLength) + '...';
-  }
-
-  return text;
-}
+// cleanTextPreview, decodeHTMLEntities は utils/formatting.js からインポート
 
 // EJSテンプレートでグローバルに使える関数を登録
 app.locals.cleanTextPreview = cleanTextPreview;
@@ -225,7 +194,11 @@ app.get('/', async (req, res) => {
     const keyword = req.query.q || '';
     const titleSearch = req.query.title_search || '';
     const memberId = req.query.member || null;
-    const members = req.query.members || [];
+    // membersパラメータを配列として処理（単一値の場合も配列に変換）
+    let members = req.query.members || [];
+    if (!Array.isArray(members)) {
+      members = [members];
+    }
     const perPage = parseInt(req.query.per_page) || 20;
     const page = parseInt(req.query.page) || 1;
     const dateFrom = req.query.date_from || '';
@@ -257,15 +230,27 @@ app.get('/', async (req, res) => {
       date: formatDate(post.date)
     }));
 
-    const allMembers = await dataService.getMembers();
+    const allMembers = await dataService.getAllMembersFromPosts();
     const stats = fs.existsSync('config.json') ?
       await dataService.getStats() : getImageStats();
 
-    // Get unique author count from database
-    let uniqueAuthors = 0;
+    // フィルター適用後の動的統計情報を計算
+    const filteredStats = {
+      totalPosts: totalPosts,
+      uniqueAuthors: new Set(allPosts.map(p => p.member_id)).size,
+      totalImages: allPosts.reduce((sum, post) => {
+        const imgCount = post.images ? (Array.isArray(post.images) ? post.images.length : post.images.split(',').length) : 0;
+        return sum + imgCount;
+      }, 0),
+      totalSize: calculateImageSize(allPosts)
+    };
+
+    // 全体の統計情報
+    const globalStats = { ...stats };
     if (!fs.existsSync('config.json')) {
       try {
-        const result = await new Promise((resolve, reject) => {
+        // 全体の投稿者数を取得
+        const authorsResult = await new Promise((resolve, reject) => {
           dataService.db.get(
             'SELECT COUNT(DISTINCT member_name) as count FROM blog_posts',
             (err, row) => {
@@ -274,18 +259,34 @@ app.get('/', async (req, res) => {
             }
           );
         });
-        uniqueAuthors = result.count;
+        globalStats.uniqueAuthors = authorsResult.count;
+
+        // 全体のブログ投稿数を取得
+        const postsResult = await new Promise((resolve, reject) => {
+          dataService.db.get(
+            'SELECT COUNT(*) as count FROM blog_posts',
+            (err, row) => {
+              if (err) reject(err);
+              else resolve(row);
+            }
+          );
+        });
+        globalStats.totalPosts = postsResult.count;
       } catch (err) {
-        console.error('Error getting unique authors:', err);
+        console.error('Error getting global stats:', err);
       }
     }
-    stats.uniqueAuthors = uniqueAuthors;
+
+    // フィルター適用中かどうか
+    const isFiltered = keyword || titleSearch || memberId || (members && members.length > 0) || dateFrom || dateTo;
 
     res.render('index', {
       keyword,
       posts: formattedPosts,
       members: allMembers,
-      stats,
+      stats: globalStats,
+      filteredStats: filteredStats,
+      isFiltered: isFiltered,
       title: '櫻坂46 ブログアーカイブ',
       req: req,
       pagination: {
@@ -306,7 +307,7 @@ app.get('/', async (req, res) => {
 // メンバー一覧ページ
 app.get('/members', async (req, res) => {
   try {
-    const members = await dataService.getMembers();
+    const members = await dataService.getAllMembersFromPosts();
     const stats = fs.existsSync('config.json') ?
       await dataService.getStats() : getImageStats();
 
@@ -325,7 +326,7 @@ app.get('/members', async (req, res) => {
 app.get('/member/:id', async (req, res) => {
   try {
     const memberId = req.params.id;
-    const members = await dataService.getMembers();
+    const members = await dataService.getAllMembersFromPosts();
     const member = members.find(m => m.id == memberId);
 
     if (!member) {
@@ -372,7 +373,7 @@ app.get('/member/:id', async (req, res) => {
   }
 });
 
-// ブログ記事詳細
+// ブログ詳細
 app.get('/post/:id', async (req, res) => {
   try {
     const postId = req.params.id;
@@ -380,7 +381,7 @@ app.get('/post/:id', async (req, res) => {
     // 画像込みで単一投稿を取得
     let post;
     if (fs.existsSync('config.json')) {
-      // Google Sheets対応の記事取得
+      // Google Sheets対応のブログ取得
       const allPosts = await dataService.getBlogPosts(null, 10000);
       post = allPosts.find(p => p.id == postId);
     } else {
@@ -389,8 +390,53 @@ app.get('/post/:id', async (req, res) => {
     }
 
     if (!post) {
-      res.status(404).send('記事が見つかりません');
+      res.status(404).send('ブログが見つかりません');
       return;
+    }
+
+    // 同じメンバーの全投稿を取得して前後のブログを探す
+    let prevPost = null;
+    let nextPost = null;
+
+    try {
+      let allMemberPosts;
+
+      if (fs.existsSync('config.json')) {
+        // Google Sheetsの場合は全投稿を取得してフィルタリング
+        const allPosts = await dataService.getBlogPosts(null, 10000);
+        allMemberPosts = allPosts.filter(p => p.member_id == post.member_id);
+      } else {
+        // SQLiteの場合
+        allMemberPosts = await dataService.getBlogPosts(post.member_id, 10000);
+      }
+
+      // 日付でソート（降順：新しい→古い）
+      allMemberPosts.sort((a, b) => {
+        const dateA = parsePostDate(a.date);
+        const dateB = parsePostDate(b.date);
+        return dateB - dateA;
+      });
+
+      // 現在のブログのインデックスを見つける
+      const currentIndex = allMemberPosts.findIndex(p => p.id == postId);
+
+      // 前のブログ（より新しい）と次のブログ（より古い）を取得
+      if (currentIndex > 0) {
+        prevPost = {
+          ...allMemberPosts[currentIndex - 1],
+          date: formatDate(allMemberPosts[currentIndex - 1].date)
+        };
+      }
+
+      if (currentIndex < allMemberPosts.length - 1 && currentIndex >= 0) {
+        nextPost = {
+          ...allMemberPosts[currentIndex + 1],
+          date: formatDate(allMemberPosts[currentIndex + 1].date)
+        };
+      }
+    } catch (navError) {
+      console.error('ナビゲーション取得エラー:', navError);
+      // エラーが発生してもページは表示する
     }
 
     // 日付をフォーマット
@@ -401,7 +447,10 @@ app.get('/post/:id', async (req, res) => {
 
     res.render('post', {
       post,
-      title: post.title || 'ブログ記事'
+      prevPost,
+      nextPost,
+      title: post.title || 'ブログ',
+      imageBaseUrl: getImageBaseUrl()
     });
   } catch (error) {
     console.error(error);
@@ -473,21 +522,78 @@ app.delete('/api/posts/bulk-delete', async (req, res) => {
 app.get('/search', async (req, res) => {
   try {
     const keyword = req.query.q || '';
-
-    if (keyword) {
-      const posts = await dataService.searchBlogPosts(keyword);
-      res.render('search', {
-        keyword,
-        posts,
-        title: `「${keyword}」の検索結果`
-      });
-    } else {
-      res.render('search', {
-        keyword: '',
-        posts: [],
-        title: '検索'
-      });
+    const titleSearch = req.query.title_search || '';
+    const memberId = req.query.member || null;
+    // membersパラメータを配列として処理（単一値の場合も配列に変換）
+    let members = req.query.members || [];
+    if (!Array.isArray(members)) {
+      members = [members];
     }
+    const perPage = parseInt(req.query.per_page) || 20;
+    const page = parseInt(req.query.page) || 1;
+    const dateFrom = req.query.date_from || '';
+    const dateTo = req.query.date_to || '';
+    const sortOrder = req.query.sort || 'desc';
+
+    console.log('Search params - members:', members, 'memberId:', memberId);
+
+    // 全件取得してからページング処理
+    let allPosts = await performAdvancedSearch({
+      keyword,
+      titleSearch,
+      memberId,
+      members,
+      limit: 10000, // 全件取得
+      dateFrom,
+      dateTo,
+      sortOrder,
+      dataService
+    });
+
+    // ページネーション計算
+    const totalPosts = allPosts.length;
+    const totalPages = Math.ceil(totalPosts / perPage);
+    const offset = (page - 1) * perPage;
+    const posts = allPosts.slice(offset, offset + perPage);
+
+    // 日付をフォーマット
+    const formattedPosts = posts.map(post => ({
+      ...post,
+      date: formatDate(post.date)
+    }));
+
+    const allMembers = await dataService.getAllMembersFromPosts();
+
+    // フィルター適用後の動的統計情報を計算
+    const filteredStats = {
+      totalPosts: totalPosts,
+      uniqueAuthors: new Set(allPosts.map(p => p.member_id)).size,
+      totalImages: allPosts.reduce((sum, post) => {
+        const imgCount = post.images ? (Array.isArray(post.images) ? post.images.length : post.images.split(',').length) : 0;
+        return sum + imgCount;
+      }, 0),
+      totalSize: calculateImageSize(allPosts)
+    };
+
+    const isFiltered = keyword || titleSearch || memberId || (members && members.length > 0) || dateFrom || dateTo;
+
+    res.render('search', {
+      keyword,
+      posts: formattedPosts,
+      members: allMembers,
+      filteredStats: filteredStats,
+      isFiltered: isFiltered,
+      title: keyword ? `「${keyword}」の検索結果` : '検索',
+      req: req,
+      pagination: {
+        page,
+        perPage,
+        totalPages,
+        totalPosts,
+        hasNext: page < totalPages,
+        hasPrev: page > 1
+      }
+    });
   } catch (error) {
     console.error(error);
     res.status(500).send('エラーが発生しました');

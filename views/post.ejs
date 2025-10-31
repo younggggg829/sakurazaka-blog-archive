@@ -20,6 +20,43 @@
       </header>
 
       <main>
+        <!-- ブログナビゲーション（上部） -->
+        <div class="blog-navigation">
+          <% if (prevPost) { %>
+          <a href="/post/<%= prevPost.id %>" class="nav-button prev-post">
+            <span class="nav-arrow">←</span>
+            <span class="nav-text">
+              <span class="nav-label">前のブログ</span>
+              <span class="nav-title"><%= prevPost.title || '無題' %></span>
+              <span class="nav-date"><%= prevPost.date %></span>
+            </span>
+          </a>
+          <% } else { %>
+          <div class="nav-button nav-disabled">
+            <span class="nav-arrow">←</span>
+            <span class="nav-text">
+              <span class="nav-label">これが最新です</span>
+            </span>
+          </div>
+          <% } %> <% if (nextPost) { %>
+          <a href="/post/<%= nextPost.id %>" class="nav-button next-post">
+            <span class="nav-text">
+              <span class="nav-label">次のブログ</span>
+              <span class="nav-title"><%= nextPost.title || '無題' %></span>
+              <span class="nav-date"><%= nextPost.date %></span>
+            </span>
+            <span class="nav-arrow">→</span>
+          </a>
+          <% } else { %>
+          <div class="nav-button nav-disabled">
+            <span class="nav-text">
+              <span class="nav-label">これが最古です</span>
+            </span>
+            <span class="nav-arrow">→</span>
+          </div>
+          <% } %>
+        </div>
+
         <article class="blog-post">
           <div class="post-header">
             <h1><%= post.title || 'タイトルなし' %></h1>
@@ -38,11 +75,39 @@
 
           <div class="post-content">
             <% if (post.content && post.content.includes('<')) { %>
-            <!-- HTMLコンテンツの画像パスを自動変換して表示 -->
-            <%- (post.content || '').replace(/src="\/([^"]+)"/g, function(match, path) {
-              if (path.startsWith('http')) return match;
-              return 'src="https://sakurazaka46.com/' + path + '"';
-            }) %>
+            <!-- HTMLコンテンツの画像パスを環境に応じたURLに変換して表示 -->
+            <%
+              let content = post.content || '';
+
+              // 画像URLとローカルパスのマッピングを作成し、環境に応じたURLに置換
+              if (post.images && post.local_images && post.images.length === post.local_images.length) {
+                for (let i = 0; i < post.images.length; i++) {
+                  const imageUrl = post.images[i];
+                  const localPath = post.local_images[i];
+
+                  // 環境に応じた画像URLを生成
+                  // localPath: "images/メンバー名_site/post_id_hash.jpg"
+                  // imageBaseUrl: "/images" (local) or "https://cdn.example.com" (S3/CloudFront)
+                  const imageFullUrl = imageBaseUrl + '/' + localPath;
+
+                  // 元のURLを環境に応じたURLに置換
+                  content = content.replace(new RegExp(imageUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), imageFullUrl);
+                }
+              }
+
+              // 残りの相対パスを公式サイトのURLに変換
+              content = content.replace(/src="\/([^"]+)"/g, function(match, path) {
+                // すでにimages/で始まるパスは環境に応じたURLに変換済み
+                if (path.startsWith('images/')) {
+                  return 'src="' + imageBaseUrl + '/' + path + '"';
+                }
+                // httpで始まるURLはそのまま
+                if (path.startsWith('http')) return match;
+                // それ以外は公式サイトのURLに変換
+                return 'src="https://sakurazaka46.com/' + path + '"';
+              });
+            %>
+            <%- content %>
             <% } else { %>
             <!-- テキストコンテンツを改行対応で表示 -->
             <%- (post.content || '').replace(/\n/g, '<br />') %>
@@ -53,11 +118,86 @@
             <div class="saved-date">保存日時: <%= post.created_at %></div>
           </div>
         </article>
+
+        <!-- ブログナビゲーション（下部） -->
+        <div class="blog-navigation">
+          <% if (prevPost) { %>
+          <a href="/post/<%= prevPost.id %>" class="nav-button prev-post">
+            <span class="nav-arrow">←</span>
+            <span class="nav-text">
+              <span class="nav-label">前のブログ</span>
+              <span class="nav-title"><%= prevPost.title || '無題' %></span>
+              <span class="nav-date"><%= prevPost.date %></span>
+            </span>
+          </a>
+          <% } else { %>
+          <div class="nav-button nav-disabled">
+            <span class="nav-arrow">←</span>
+            <span class="nav-text">
+              <span class="nav-label">これが最新です</span>
+            </span>
+          </div>
+          <% } %> <% if (nextPost) { %>
+          <a href="/post/<%= nextPost.id %>" class="nav-button next-post">
+            <span class="nav-text">
+              <span class="nav-label">次のブログ</span>
+              <span class="nav-title"><%= nextPost.title || '無題' %></span>
+              <span class="nav-date"><%= nextPost.date %></span>
+            </span>
+            <span class="nav-arrow">→</span>
+          </a>
+          <% } else { %>
+          <div class="nav-button nav-disabled">
+            <span class="nav-text">
+              <span class="nav-label">これが最古です</span>
+            </span>
+            <span class="nav-arrow">→</span>
+          </div>
+          <% } %>
+        </div>
       </main>
 
       <footer>
         <p>&copy; 2025 櫻坂46 ブログアーカイブ</p>
       </footer>
     </div>
+
+    <!-- ページトップへ戻るボタン -->
+    <button
+      id="scroll-to-top"
+      onclick="scrollToTop()"
+      title="ページトップへ戻る"
+    >
+      ↑
+    </button>
+
+    <script>
+      // ページトップへスクロール
+      function scrollToTop() {
+        window.scrollTo({
+          top: 0,
+          behavior: "smooth",
+        });
+      }
+
+      // スクロール時にボタンの表示/非表示を切り替え
+      function toggleScrollButton() {
+        const scrollButton = document.getElementById("scroll-to-top");
+        if (window.pageYOffset > 300) {
+          scrollButton.classList.add("show");
+        } else {
+          scrollButton.classList.remove("show");
+        }
+      }
+
+      // ページロード時の設定
+      document.addEventListener("DOMContentLoaded", function () {
+        // スクロールイベントリスナーを追加
+        window.addEventListener("scroll", toggleScrollButton);
+
+        // 初期表示時もチェック
+        toggleScrollButton();
+      });
+    </script>
   </body>
 </html>

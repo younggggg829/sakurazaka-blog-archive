@@ -37,7 +37,7 @@
 
 ## 環境別セットアップ
 
-### A. ローカル環境（別の PC）
+### A. ローカル環境
 
 #### 1. Node.js のインストール
 
@@ -100,7 +100,7 @@ npm --version   # v9以上であることを確認
 
 - AMI: Ubuntu Server 22.04 LTS
 - インスタンスタイプ: t2.micro 以上（推奨: t2.small）
-- ストレージ: 20GB 以上
+- ストレージ: 20GB 以上（画像保存量に応じて調整）
 - セキュリティグループ:
   - SSH (22) - 管理用
   - HTTP (80) または カスタム TCP (3000) - Web ビューアー用（必要に応じて）
@@ -133,6 +133,34 @@ sudo apt-get install -y \
     libgbm1 \
     libasound2
 ```
+
+**3. 画像ストレージオプション**
+
+EC2 では以下の方法で画像を保存できます：
+
+**オプション A: ローカルディスク（デフォルト、設定不要）**
+
+```bash
+# プロジェクトディレクトリにimages/フォルダが自動作成される
+# 追加設定不要で動作
+```
+
+**オプション B: S3 ストレージ（大規模運用向け）**
+
+```bash
+# 環境変数を設定
+export STORAGE_TYPE=s3
+export S3_BUCKET=your-bucket-name
+export S3_REGION=ap-northeast-1
+export S3_BASE_URL=https://your-cloudfront-domain.cloudfront.net
+
+# または.envファイルに記載
+```
+
+**推奨構成:**
+
+- 小〜中規模（〜10GB 画像）: ローカルディスク（デフォルト）
+- 大規模（10GB 以上）: S3 + CloudFront
 
 #### Google Cloud Platform (GCP)
 
@@ -377,13 +405,71 @@ npm start
 
 ## 設定とカスタマイズ
 
-### データベース設定
+### ストレージ設定（config.js）
 
-デフォルトでは SQLite を使用します。設定変更は`database.js`で行います。
+プロジェクトは`config.js`を使用して環境に応じたストレージ設定を管理します。
+
+**デフォルト設定（ローカル環境・EC2 など）:**
 
 ```javascript
-// database.js
-const DB_PATH = "./sakurazaka_blog.db"; // データベースファイルのパス
+// config.js
+const config = {
+  storage: {
+    type: "local", // デフォルト: ローカルストレージ
+    local: {
+      baseDir: __dirname,
+      imagesDir: "images",
+    },
+  },
+};
+```
+
+この設定では：
+
+- **ローカル開発環境**: そのまま動作
+- **EC2/GCP/Azure**: そのまま動作（追加設定不要）
+- **Docker**: ボリュームマウントで動作
+- 画像は`images/`ディレクトリに保存され、Express.static で配信
+
+**S3 ストレージを使用する場合:**
+
+環境変数を設定：
+
+```bash
+# .envファイルまたはシステム環境変数
+STORAGE_TYPE=s3
+S3_BUCKET=your-bucket-name
+S3_REGION=ap-northeast-1
+S3_BASE_URL=https://your-cloudfront-domain.cloudfront.net
+# またはS3直接: https://your-bucket.s3.ap-northeast-1.amazonaws.com
+```
+
+この設定では：
+
+- 画像は指定されたベース URL から配信
+- S3 へのアップロード機能は別途実装が必要
+- CloudFront と組み合わせることでグローバル配信が可能
+
+**環境別の動作:**
+
+| 環境            | STORAGE_TYPE        | 設定               | 画像 URL 例                                      |
+| --------------- | ------------------- | ------------------ | ------------------------------------------------ |
+| ローカル開発    | local（デフォルト） | 不要               | `/images/member/post.jpg`                        |
+| EC2             | local（デフォルト） | 不要               | `/images/member/post.jpg`                        |
+| Docker          | local（デフォルト） | ボリュームマウント | `/images/member/post.jpg`                        |
+| S3 + CloudFront | s3                  | S3_BASE_URL 設定   | `https://cdn.example.com/images/member/post.jpg` |
+
+### データベース設定
+
+デフォルトでは SQLite を使用します。設定は`config.js`で管理されます。
+
+```javascript
+// config.js
+const config = {
+  database: {
+    path: path.join(__dirname, "sakurazaka_blog.db"),
+  },
+};
 ```
 
 ### スクレイピング設定
@@ -851,10 +937,18 @@ app.use(
 **`.env` ファイル作成（オプション）:**
 
 ```env
+# サーバー設定
 NODE_ENV=production
 PORT=3000
-DB_PATH=./sakurazaka_blog.db
-IMAGE_DIR=./images
+HOST=0.0.0.0
+
+# ストレージ設定
+STORAGE_TYPE=local              # 'local' または 's3'
+S3_BUCKET=your-bucket-name      # S3使用時のみ
+S3_REGION=ap-northeast-1        # S3使用時のみ
+S3_BASE_URL=https://cdn.example.com  # S3使用時のみ
+
+# その他（将来の拡張用）
 MAX_CONCURRENT_DOWNLOADS=3
 RATE_LIMIT_PER_MINUTE=15
 ```
@@ -865,11 +959,17 @@ RATE_LIMIT_PER_MINUTE=15
 # dotenvパッケージをインストール
 npm install dotenv
 
-# コード内で読み込み
+# コード内で読み込み（config.jsで既に実装済み）
 require('dotenv').config();
 
 const PORT = process.env.PORT || 3000;
 ```
+
+**重要な注意事項:**
+
+- **ローカル・EC2・Docker 環境**: `.env`ファイルは不要（デフォルト設定で動作）
+- **S3 使用時のみ**: ストレージ関連の環境変数を設定
+- `config.js`が自動的に環境変数を読み込み、適切な設定を適用
 
 ---
 
@@ -878,16 +978,31 @@ const PORT = process.env.PORT || 3000;
 本ドキュメントに従うことで、以下の環境にプロジェクトをデプロイできます：
 
 ✅ ローカル PC（macOS/Windows/Linux）
-✅ AWS EC2
+✅ AWS EC2（ローカルディスクまたは S3）
 ✅ Google Cloud Platform
 ✅ Azure VM
 ✅ Docker コンテナ
+
+**環境別の画像ストレージ:**
+
+| 環境          | 画像保存先         | 設定               |
+| ------------- | ------------------ | ------------------ |
+| ローカル開発  | ローカルディスク   | 不要（デフォルト） |
+| EC2/GCP/Azure | ローカルディスク   | 不要（デフォルト） |
+| EC2 + S3      | S3 + CloudFront    | 環境変数で設定     |
+| Docker        | ボリュームマウント | docker-compose.yml |
+
+**重要なポイント:**
+
+🔹 **デフォルト動作**: ローカル・EC2・GCP・Azure すべてで追加設定なしで動作
+🔹 **環境移行**: `config.js`により、コード変更なしで環境切り替え可能
+🔹 **柔軟性**: ストレージタイプを環境変数で簡単に切り替え
 
 **次のステップ:**
 
 1. 要件に合った環境を選択
 2. 初回セットアップを実行
-3. 必要に応じて設定をカスタマイズ
+3. 必要に応じてストレージ設定をカスタマイズ（S3 使用時のみ）
 4. バックアップ体制を構築
 5. 本番運用開始
 

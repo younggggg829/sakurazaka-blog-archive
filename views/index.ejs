@@ -46,7 +46,7 @@
       <!-- 検索セクション -->
       <div class="search-hero">
         <div class="search-header">
-          <h2>ブログ記事を検索</h2>
+          <h2>ブログを検索</h2>
           <button onclick="toggleAdvancedSearch()" class="advanced-search-btn" id="advanced-search-btn">⚙️ 詳細検索</button>
         </div>
 
@@ -76,6 +76,7 @@
                 <% }) %>
               </select>
               <button type="submit" class="search-button-main">🔍 検索</button>
+              <button type="button" onclick="resetSearch()" class="reset-button-main">リセット</button>
             </div>
           </div>
 
@@ -97,7 +98,7 @@
               <div class="member-checkboxes-compact">
                 <% members.forEach(member => { %>
                   <label class="member-checkbox-item">
-                    <input type="checkbox" name="members[]" value="<%= member.id %>">
+                    <input type="checkbox" name="members" value="<%= member.id %>">
                     <span><%= member.name %></span>
                   </label>
                 <% }) %>
@@ -129,7 +130,32 @@
 
       <!-- 統計情報 -->
       <div class="stats-row">
-        <div class="stat-card" title="現在データベースに投稿があるメンバー数">
+        <% if (typeof isFiltered !== 'undefined' && isFiltered) { %>
+          <!-- フィルター適用時の統計 -->
+          <div class="stat-card stat-card-highlight" title="フィルター適用後のブログ投稿数">
+            <span class="stat-number"><%= filteredStats.totalPosts %></span>
+            <span class="stat-label">ブログ</span>
+          </div>
+          <div class="stat-card stat-card-highlight" title="フィルター適用後の投稿者数">
+            <span class="stat-number"><%= filteredStats.uniqueAuthors %></span>
+            <span class="stat-label">投稿者</span>
+          </div>
+          <div class="stat-card stat-card-highlight" title="フィルター適用後の画像数">
+            <span class="stat-number"><%= filteredStats.totalImages %></span>
+            <span class="stat-label">画像</span>
+          </div>
+          <div class="stat-card stat-card-highlight" title="フィルター適用後の画像サイズ（<%= (filteredStats.totalSize / 1024 / 1024).toFixed(2) %> MB）">
+            <span class="stat-number"><%= (filteredStats.totalSize / 1024 / 1024).toFixed(0) %></span>
+            <span class="stat-label">MB</span>
+          </div>
+          <span class="stats-divider">|</span>
+        <% } %>
+        <!-- 全体の統計 -->
+        <div class="stat-card" title="データベース全体のブログ投稿数">
+          <span class="stat-number"><%= stats.totalPosts || pagination.totalPosts || 0 %></span>
+          <span class="stat-label">ブログ</span>
+        </div>
+        <div class="stat-card" title="データベース全体の投稿者数">
           <span class="stat-number"><%= stats.uniqueAuthors || members.length %></span>
           <span class="stat-label">投稿者</span>
         </div>
@@ -143,7 +169,7 @@
         </div>
       </div>
 
-      <!-- 検索結果または最新記事 -->
+      <!-- 検索結果または最新ブログ -->
       <div class="content-section">
         <div class="view-toggle">
           <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -151,7 +177,7 @@
               <% if (keyword) { %>
                 <h3>「<%= keyword %>」の検索結果: <%= (typeof pagination !== 'undefined' && pagination) ? pagination.totalPosts : posts.length %>件</h3>
               <% } else { %>
-                <h3>最新のブログ記事</h3>
+                <h3>最新のブログ</h3>
               <% } %>
             </div>
             <div class="per-page-selector">
@@ -167,7 +193,7 @@
 
         <% if (posts.length === 0) { %>
           <div class="no-results">
-            <p>記事が見つかりませんでした</p>
+            <p>ブログが見つかりませんでした</p>
             <% if (keyword) { %>
               <p>別のキーワードで検索してみてください</p>
             <% } %>
@@ -239,7 +265,6 @@
                   <th>タイトル</th>
                   <th>画像</th>
                   <th>公式サイト</th>
-                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -270,12 +295,9 @@
                     <td>
                       <a href="<%= post.url %>" target="_blank">🔗</a>
                     </td>
-                    <td>
-                      <button onclick="deletePost(<%= post.id %>)" class="delete-btn" title="投稿を削除">🗑️</button>
-                    </td>
                   </tr>
                   <tr id="content-<%= post.id %>" class="post-content-row" style="display:none;">
-                    <td colspan="7">
+                    <td colspan="6">
                       <div class="post-full-content">
                         <p><%= post.content %></p>
                         <% if (post.local_images && post.local_images.length > 0) { %>
@@ -283,14 +305,14 @@
                             <% post.local_images.slice(0, 3).forEach(localImg => { %>
                               <% if (localImg && localImg.includes('/images/')) { %>
                                 <% const cleanPath = localImg.replace(/.*\/images\//, '/images/').split('?')[0].split('&')[0]; %>
-                                <img src="<%= cleanPath %>" alt="記事画像" style="max-width:200px; margin:5px;" onerror="this.style.display='none'">
+                                <img src="<%= cleanPath %>" alt="ブログ画像" style="max-width:200px; margin:5px;" onerror="this.style.display='none'">
                               <% } %>
                             <% }) %>
                           </div>
                         <% } else if (post.images && post.images.length > 0) { %>
                           <div class="post-images-preview">
                             <% post.images.slice(0, 3).forEach(img => { %>
-                              <img src="<%= img %>" alt="記事画像" style="max-width:200px; margin:5px;">
+                              <img src="<%= img %>" alt="ブログ画像" style="max-width:200px; margin:5px;">
                             <% }) %>
                           </div>
                         <% } %>
@@ -397,6 +419,11 @@
     </footer>
   </div>
 
+  <!-- ページトップへ戻るボタン -->
+  <button id="scroll-to-top" onclick="scrollToTop()" title="ページトップへ戻る">
+    ↑
+  </button>
+
   <script>
     // 表示件数変更
     function changePerPage(value) {
@@ -440,34 +467,6 @@
       }
     }
 
-    // 投稿削除
-    async function deletePost(postId) {
-      if (!confirm('この投稿を削除しますか？')) {
-        return;
-      }
-
-      try {
-        const response = await fetch(`/api/post/${postId}`, {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-          alert('投稿が削除されました');
-          location.reload(); // ページをリロード
-        } else {
-          alert('削除に失敗しました: ' + result.message);
-        }
-      } catch (error) {
-        alert('削除中にエラーが発生しました');
-        console.error(error);
-      }
-    }
-
     // 詳細検索の表示切り替え
     function toggleAdvancedSearch() {
       const advancedSearch = document.getElementById('advanced-search');
@@ -494,6 +493,11 @@
         moreMembers.style.display = 'none';
         showMoreBtn.textContent = 'すべて表示';
       }
+    }
+
+    // 基本検索のリセット
+    function resetSearch() {
+      window.location.href = '/';
     }
 
     // 詳細検索フォームのリセット
@@ -577,6 +581,24 @@
       }
     }
 
+    // ページトップへスクロール
+    function scrollToTop() {
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      });
+    }
+
+    // スクロール時にボタンの表示/非表示を切り替え
+    function toggleScrollButton() {
+      const scrollButton = document.getElementById('scroll-to-top');
+      if (window.pageYOffset > 300) {
+        scrollButton.classList.add('show');
+      } else {
+        scrollButton.classList.remove('show');
+      }
+    }
+
     // ページロード時の設定
     document.addEventListener('DOMContentLoaded', function() {
       // 検索フィールドがある場合はフォーカス
@@ -584,6 +606,12 @@
       if (searchInput && !searchInput.value) {
         searchInput.focus();
       }
+
+      // スクロールイベントリスナーを追加
+      window.addEventListener('scroll', toggleScrollButton);
+
+      // 初期表示時もチェック
+      toggleScrollButton();
     });
   </script>
 </body>
