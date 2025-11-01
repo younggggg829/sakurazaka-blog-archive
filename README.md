@@ -31,19 +31,6 @@ node index.js
 node webServer.js
 ```
 
-### テストの実行
-
-```bash
-# すべてのテストを実行
-npm test
-
-# テストをウォッチモードで実行（開発時）
-npm run test:watch
-
-# カバレッジレポートを生成
-npm run test:coverage
-```
-
 **メニュー一覧：**
 
 1. **🌐 Open member blog in browser**
