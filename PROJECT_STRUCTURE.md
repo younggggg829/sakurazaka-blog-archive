@@ -116,22 +116,6 @@ sakurazaka-blog-archive/
 - Inquirer 12.10.0
 - Chalk 4.1.2
 
-## 🚀 使用方法
-
-```bash
-# インストール
-npm install
-
-# CLIツール起動
-npm start
-
-# Webサーバー起動
-node webServer.js
-
-# テスト実行
-npm test
-```
-
 ---
 
 **最終更新:** 2025-10-30
