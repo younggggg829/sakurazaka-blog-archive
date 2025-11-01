@@ -1,73 +1,20 @@
-# 🌸 Sakurazaka46・Keyakizaka46 ブログアーカイブツール
+# Sakurazaka46・Keyakizaka46 ブログアーカイブツール
 
 櫻坂 46 と欅坂 46 のブログ記事をスクレイピング・保存・検索できるツールです。画像の自動ダウンロード機能付き。
 
 ## ✨ 主要機能
 
-- 🌸 **双方ブログサポート**: 櫻坂 46 と欅坂 46 の両方のブログをサポート
-- 🌐 **メンバー一覧取得**: 公式サイトから自動取得
-- 📝 **ブログスクレイピング**: 指定メンバーのブログ記事を取得（サイト別ラベル付き）
+- 📝 **双方ブログサポート**: 櫻坂 46 と欅坂 46 の両方のブログをサポート
+- 👼🏻 **メンバー一覧取得**: 公式サイトから自動取得
+- 🪏 **ブログスクレイピング**: 指定メンバーのブログ記事を取得（サイト別ラベル付き）
 - 📷 **画像ローカル保存**: ブログ画像をダウンロード
 - 💾 **データベース保存**: SQLite で永続化（サイト識別付き）
 - 🔍 **全文検索**: タイトル・本文から検索
 - 🌐 **Web ビューアー**: ブラウザで閲覧可能
 
-## 🏗️ システム構成
-
-### 💾 データベース構造（SQLite）
-
-**データベースファイル**: `sakurazaka_blog.db`
-
-#### 📋 テーブル構成
-
-1. **members**（櫻坂 46 現役メンバー情報）
-
-   ```sql
-   - id: メンバーID (例: 47)
-   - name: メンバー名 (例: 森田ひかる)
-   - blog_url: 櫻坂46 公式ブログURL
-   ```
-
-2. **blog_posts**（ブログ記事）
-
-   ```sql
-   - id: 記事ID（自動採番）
-   - member_id: メンバーID (外部キー)
-   - member_name: メンバー名
-   - url: 元ブログURL (一意)
-   - title: 記事タイトル
-   - date: 投稿日
-   - content: 記事本文
-   - site: サイト識別子 ('sakurazaka46' または 'keyakizaka46')
-   - created_at: 保存日時
-   ```
-
-3. **blog_images**（記事画像）
-   ```sql
-   - id: 画像ID（自動採番）
-   - post_id: 記事ID (外部キー)
-   - image_url: 元画像URL
-   - local_path: ローカル保存パス
-   ```
-
-### 画像保存構造
-
-```
-images/
-├── 森田ひかる_sakurazaka46/
-├── 森田ひかる_keyakizaka46/
-├── 小田倉麗奈_sakurazaka46/
-├── 村山美羽_sakurazaka46/
-└── ...
-```
-
-- フォルダ名: `{メンバー名}_{サイト識別子}`
-- ファイル名: `post_{投稿ID}_{ハッシュ}.jpg`
-- サイト識別子: `sakurazaka46` または `keyakizaka46`
-
 ## 📦 インストール方法
 
-- DEPLOYMENT.md を参照してください
+./docs/DEPLOYMENT.md を参照してください
 
 ## 🚀 使用方法
 
@@ -145,6 +92,8 @@ npm run test:coverage
 
 ```bash
 npm start
+
+メニューから「🌐 Web ページビューアーを起動」　を選択
 ```
 
 ブラウザで `http://localhost:3000` にアクセス
@@ -282,39 +231,7 @@ Saving to database...
 
 ## 🗂️ ファイル構成
 
-### 📁 主要ファイル
-
-- `index.js` - メインの CLI インターフェース
-- `webServer.js` - Express.js サーバー
-- `fetchMembers.js` - メンバーリスト取得
-- `blogScraper.js` - 櫻坂 46 ブログスクレイピング
-- `keyakiBlogScraper.js` - 欅坂 46 ブログスクレイピング
-- `imageDownloader.js` - 画像ダウンロード・最適化
-- `database.js` - SQLite データベース操作（async/await 対応）
-- `config.js` - アプリケーション設定
-- `storageAdapter.js` - ストレージ抽象化レイヤー
-
-### 📂 ユーティリティ（utils/）
-
-- `dateUtils.js` - 日付処理の共通関数
-- `constants.js` - 定数定義（レート制限、セレクター等）
-- `formatting.js` - テキスト整形・HTML クリーニング
-- `scraperUtils.js` - スクレイピング共通処理
-- `errorHandler.js` - 統一されたエラーハンドリング
-- `*.test.js` - Jest テストファイル
-
-### 📂 その他
-
-- `views/` - EJS テンプレート
-- `public/` - 静的ファイル（CSS 等）
-- `.gitignore` - キャッシュファイル除外設定
-
-### 📄 ドキュメント
-
-- `README.md` - このファイル
-- `PROJECT_STRUCTURE.md` - プロジェクト構造詳細
-- `DEPLOYMENT.md` - デプロイ手順
-- `DEPLOYMENT_EC2_S3.md` - AWS デプロイ手順
+./docs/PROJECT_STRUCTURE.md を参照してください
 
 ## 👥 対応メンバー
 
@@ -334,23 +251,6 @@ Saving to database...
 大沼晶保、幸阪茉里乃、増本綺良、守屋麗奈
 
 **注**: 欅坂 46 メンバーは現在の櫻坂 46 メンバーの中から、欅坂 46 時代に活動していたメンバーのみが対象です。
-
-## 📌 バージョン情報
-
-**Current Version: v1.1.0**
-
-### 最新アップデート（2025-10-30）
-
-### 主な機能
-
-- **🌸 櫻坂 46 & 欅坂 46 対応**: 両グループのブログをスクレイピング・アーカイブ
-- **💾 統合データベース**: SQLite で両サイトの記事を一元管理（site 識別子付き）
-- **🔍 全文検索**: キーワード・メンバー・期間で柔軟に検索
-- **📷 画像管理**: 自動ダウンロード・最適化・重複防止
-- **🌐 Web ビューアー**: ブラウザで快適に閲覧（テーブル/カードビュー切替）
-- **⚡ ページング**: 20/50/100 件表示選択
-- **🗑️ 一括削除**: チェックボックスで複数記事を選択削除
-- **🧪 テストカバレッジ**: 50%以上のコードカバレッジ
 
 ## ⚠️ 注意事項
 
@@ -401,148 +301,13 @@ lsof -ti:3000 | xargs kill -9 2>/dev/null || true
 node webServer.js
 ```
 
-### 🌙 バックグラウンドで起動
+## 📌 バージョン情報
 
-ターミナルを閉じても動作し続ける方法：
-
-```bash
-# nohupを使用してバックグラウンド起動
-lsof -ti:3000 | xargs kill -9 2>/dev/null || true
-nohup node webServer.js > webserver.log 2>&1 &
-
-# ログファイルで動作確認
-tail -f webserver.log
-```
-
-**説明：**
-
-- `nohup`: ターミナル終了後も実行継続
-- `> webserver.log`: 出力をファイルに保存（オプション）
-- `2>&1`: エラー出力も同じファイルに
-- `&`: バックグラウンド実行
-
-**注意**: ログファイルを作成したい場合は、上記のように`> webserver.log`でリダイレクトしてください。デフォルトではコンソールに出力されます。
-
-### 🔍 トラブルシューティング（稼働管理）
-
-#### サーバーが起動しない場合
-
-```bash
-# 1. ポートが使用中か確認
-lsof -i :3000
-
-# 2. ポートを使用中のプロセスを強制終了
-lsof -ti:3000 | xargs kill -9
-
-# 3. 再起動
-node webServer.js
-```
-
-#### 複数のプロセスが起動している場合
-
-```bash
-# 全てのwebServer.jsプロセスを確認
-ps aux | grep "node webServer.js" | grep -v grep
-
-# 全て停止
-pkill -f "node webServer.js"
-
-# または個別に停止
-kill -9 [PID1] [PID2] [PID3]
-```
-
-## 🛠️ トラブルシューティング
-
-### 🔧 よくある問題と解決法
-
-#### 🧪 テスト関連
-
-- **Jest がインストールされていない**:
-  ```bash
-  npm install --save-dev jest@^29.7.0
-  ```
-- **テストが失敗する**:
-
-  ```bash
-  # Node.jsバージョン確認（推奨: v20以上）
-  node -v
-
-  # 依存関係の再インストール
-  npm ci
-
-  # キャッシュのクリア
-  npm cache clean --force
-  ```
-
-#### 📡 接続・取得エラー
-
-- **メンバーリスト取得エラー**: インターネット接続を確認
-- **ブラウザが開かない**: `npx playwright install chromium`を再実行
-- **画像ダウンロード失敗**: `images/`フォルダの権限を確認
-
-#### 💾 データベース関連エラー
-
-**🚨 「データベースエラー」が表示された場合：**
-
-1. **安全な方法（推奨）**:
-
-   ```bash
-   # バックアップを作成
-   cp sakurazaka_blog.db sakurazaka_blog_backup.db
-
-   # 問題のあるDBを削除
-   rm sakurazaka_blog.db
-
-   # プログラム再起動（自動でDB再作成）
-   npm start
-   ```
-
-2. **ファイルシステム を使用**:
-   - `~/sakurazaka-blog-archive/`フォルダを開く
-   - `sakurazaka_blog.db`を右クリック → ゴミ箱に入れる
-
-**❓ データベースリセットの影響:**
-
-- ✅ **保持されるもの**: 画像ファイル、プログラム機能
-- ❌ **失われるもの**: 記事データ（再スクレイピングが必要）
-- 📦 **バックアップ**: 削除前にバックアップファイル作成
-
-#### 🗑️ 削除機能について
-
-**選択した投稿を削除ボタンをクリックした場合：**
-
-- ✅ データベースから記事情報を完全削除
-- ✅ 画像のデータベースレコードも削除
-- ✅ ローカル画像ファイル（`images/`フォルダ内）も削除
-
-#### 🔍 データベース内容の確認
-
-**SQLite でデータベースの中身を確認：**
-
-```bash
-# 記事数確認
-sqlite3 sakurazaka_blog.db "SELECT COUNT(*) FROM blog_posts;"
-
-# メンバー一覧
-sqlite3 sakurazaka_blog.db "SELECT * FROM members;"
-
-# 特定メンバーの記事数
-sqlite3 sakurazaka_blog.db "SELECT member_name, COUNT(*) FROM blog_posts GROUP BY member_id;"
-```
-
----
+### **Current Version: v1.1.0**
 
 ## 🔄 更新履歴
 
-### v1.1.0 (2025-10-30)
-
----
-
-## 📖 関連ドキュメント
-
-- **[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)** - プロジェクト構造詳細
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - デプロイ手順
-- **[DEPLOYMENT_EC2_S3.md](DEPLOYMENT_EC2_S3.md)** - AWS デプロイ手順
+### v1.1.0 リリース（2025-10-30）
 
 ---
 

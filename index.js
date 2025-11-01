@@ -23,8 +23,8 @@ async function displayMenu() {
       name: "action",
       message: "What would you like to do?",
       choices: [
-        { name: "🌐 Open member blog in browser", value: "open" },
-        { name: "💾 Scrape and save sakurazaka46 blog posts", value: "scrape" },
+        { name: "👼 Open member blog in browser", value: "open" },
+        { name: "🌸 Scrape and save sakurazaka46 blog posts", value: "scrape" },
         {
           name: "🌳 Scrape and save Keyakizaka46 blog posts",
           value: "scrape-keyaki",
@@ -234,7 +234,11 @@ async function openMemberBlog() {
   console.log(chalk.green("✓ ブラウザを閉じました"));
 
   // メインメニューに戻る確認
-  console.log(chalk.yellow("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
+  console.log(
+    chalk.yellow(
+      "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+  );
   await inquirer.prompt([
     {
       type: "confirm",
@@ -555,7 +559,11 @@ async function scrapeKeyakiMemberBlog() {
   }
 
   // メインメニューに戻る確認
-  console.log(chalk.yellow("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
+  console.log(
+    chalk.yellow(
+      "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+  );
   await inquirer.prompt([
     {
       type: "confirm",
@@ -740,7 +748,11 @@ async function scrapeMemberBlog() {
   }
 
   // メインメニューに戻る確認
-  console.log(chalk.yellow("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
+  console.log(
+    chalk.yellow(
+      "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+  );
   await inquirer.prompt([
     {
       type: "confirm",
