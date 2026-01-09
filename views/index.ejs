@@ -303,10 +303,7 @@
                         <% if (post.local_images && post.local_images.length > 0) { %>
                           <div class="post-images-preview">
                             <% post.local_images.slice(0, 3).forEach(localImg => { %>
-                              <% if (localImg && localImg.includes('/images/')) { %>
-                                <% const cleanPath = localImg.replace(/.*\/images\//, '/images/').split('?')[0].split('&')[0]; %>
-                                <img src="<%= cleanPath %>" alt="ブログ画像" style="max-width:200px; margin:5px;" onerror="this.style.display='none'">
-                              <% } %>
+                              <img src="<%= toImageUrl(localImg) %>" alt="ブログ画像" style="max-width:200px; margin:5px;" onerror="this.style.display='none'">
                             <% }) %>
                           </div>
                         <% } else if (post.images && post.images.length > 0) { %>

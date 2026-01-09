@@ -519,6 +519,15 @@ async function scrapeKeyakiMemberBlog() {
             .map((d) => d.localPath);
           post.localImages = localImagePaths;
 
+          // URL→ローカルパスのマップでDB更新（インデックスずれ防止）
+          const urlToLocal = {};
+          downloaded.forEach((d) => {
+            if (d.success && d.url && d.localPath) {
+              urlToLocal[d.url] = d.localPath;
+            }
+          });
+          await db.updateBlogPostImagesByMap(post.url, urlToLocal);
+
           console.log(
             `  ${downloaded.filter((d) => d.success).length}/${
               post.images.length
@@ -527,12 +536,7 @@ async function scrapeKeyakiMemberBlog() {
         }
       }
 
-      // 画像をダウンロードした場合、ローカル画像パスも保存
-      for (const post of posts) {
-        if (post.localImages && post.localImages.length > 0) {
-          await db.updateBlogPostImages(post.url, post.localImages);
-        }
-      }
+      // 画像は各投稿処理内で URLマップにより即時保存済み
     }
 
     const { showPosts } = await inquirer.prompt([
@@ -709,6 +713,15 @@ async function scrapeMemberBlog() {
             .map((d) => d.localPath);
           post.localImages = localImagePaths;
 
+          // URL→ローカルパスのマップでDB更新（インデックスずれ防止）
+          const urlToLocal = {};
+          downloaded.forEach((d) => {
+            if (d.success && d.url && d.localPath) {
+              urlToLocal[d.url] = d.localPath;
+            }
+          });
+          await db.updateBlogPostImagesByMap(post.url, urlToLocal);
+
           console.log(
             `  ${downloaded.filter((d) => d.success).length}/${
               post.images.length
@@ -717,12 +730,7 @@ async function scrapeMemberBlog() {
         }
       }
 
-      // 画像をダウンロードした場合、ローカル画像パスも保存
-      for (const post of posts) {
-        if (post.localImages && post.localImages.length > 0) {
-          await db.updateBlogPostImages(post.url, post.localImages);
-        }
-      }
+      // 画像は各投稿処理内で URLマップにより即時保存済み
     }
 
     const { showPosts } = await inquirer.prompt([

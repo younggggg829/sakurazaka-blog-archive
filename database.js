@@ -1,7 +1,7 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
-const fs = require('fs');
-const { promisify } = require('util');
+const sqlite3 = require("sqlite3").verbose();
+const path = require("path");
+const fs = require("fs");
+const { promisify } = require("util");
 
 /**
  * ブログデータベース管理クラス
@@ -9,7 +9,7 @@ const { promisify } = require('util');
  */
 class BlogDatabase {
   constructor() {
-    const dbPath = path.join(__dirname, 'sakurazaka_blog.db');
+    const dbPath = path.join(__dirname, "sakurazaka_blog.db");
     this.db = new sqlite3.Database(dbPath);
 
     // Promisifyでメソッドをasync/await対応に
@@ -60,6 +60,12 @@ class BlogDatabase {
           FOREIGN KEY (post_id) REFERENCES blog_posts (id)
         )
       `);
+
+      // 同一post_id内での画像URL重複を防止するユニークインデックス
+      this.db.run(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_blog_images_post_image
+        ON blog_images(post_id, image_url)
+      `);
     });
   }
 
@@ -69,7 +75,7 @@ class BlogDatabase {
    */
   async saveMember(member) {
     const stmt = this.db.prepare(
-      'INSERT OR REPLACE INTO members (id, name, blog_url) VALUES (?, ?, ?)'
+      "INSERT OR REPLACE INTO members (id, name, blog_url) VALUES (?, ?, ?)"
     );
 
     return new Promise((resolve, reject) => {
@@ -86,7 +92,7 @@ class BlogDatabase {
    * @param {Array<object>} members - メンバーオブジェクトの配列
    */
   async saveMembers(members) {
-    return Promise.all(members.map(member => this.saveMember(member)));
+    return Promise.all(members.map((member) => this.saveMember(member)));
   }
 
   /**
@@ -94,7 +100,7 @@ class BlogDatabase {
    * @returns {Promise<Array>} メンバーの配列
    */
   async getMembers() {
-    return this.dbAll('SELECT * FROM members ORDER BY name');
+    return this.dbAll("SELECT * FROM members ORDER BY name");
   }
 
   /**
@@ -122,9 +128,9 @@ class BlogDatabase {
     `);
 
     // sitesにkeyakizaka46が含まれているかチェック
-    return rows.map(row => ({
+    return rows.map((row) => ({
       ...row,
-      has_keyaki: row.sites && row.sites.includes('keyakizaka46')
+      has_keyaki: row.sites && row.sites.includes("keyakizaka46"),
     }));
   }
 
@@ -136,8 +142,15 @@ class BlogDatabase {
   async saveBlogPost(post) {
     return new Promise((resolve, reject) => {
       const stmt = this.db.prepare(`
-        INSERT OR REPLACE INTO blog_posts (member_id, member_name, url, title, date, content, site)
+        INSERT INTO blog_posts (member_id, member_name, url, title, date, content, site)
         VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(url) DO UPDATE SET
+          member_id=excluded.member_id,
+          member_name=excluded.member_name,
+          title=excluded.title,
+          date=excluded.date,
+          content=excluded.content,
+          site=excluded.site
       `);
 
       const self = this;
@@ -148,27 +161,38 @@ class BlogDatabase {
         post.title,
         post.date,
         post.content,
-        post.site || 'sakurazaka46',
-        function(err) {
+        post.site || "sakurazaka46",
+        function (err) {
           if (err) {
             reject(err);
           } else {
-            const postId = this.lastID;
+            // コンフリクト（更新）時は lastID が信頼できないため、URLでIDを取得
+            self.db.get(
+              "SELECT id FROM blog_posts WHERE url = ?",
+              [post.url],
+              (idErr, row) => {
+                if (idErr || !row) {
+                  reject(idErr || new Error("Failed to retrieve post id"));
+                  return;
+                }
+                const postId = row.id;
 
-            // 画像情報を保存
-            if (post.images && post.images.length > 0) {
-              const imageStmt = self.db.prepare(
-                'INSERT INTO blog_images (post_id, image_url) VALUES (?, ?)'
-              );
+                // 画像情報を保存
+                if (post.images && post.images.length > 0) {
+                  const imageStmt = self.db.prepare(
+                    "INSERT OR IGNORE INTO blog_images (post_id, image_url) VALUES (?, ?)"
+                  );
 
-              post.images.forEach(imageUrl => {
-                imageStmt.run(postId, imageUrl);
-              });
+                  post.images.forEach((imageUrl) => {
+                    imageStmt.run(postId, imageUrl);
+                  });
 
-              imageStmt.finalize();
-            }
+                  imageStmt.finalize();
+                }
 
-            resolve(postId);
+                resolve(postId);
+              }
+            );
           }
         }
       );
@@ -183,7 +207,7 @@ class BlogDatabase {
    * @returns {Promise<Array>} 保存された投稿IDの配列
    */
   async saveBlogPosts(posts) {
-    return Promise.all(posts.map(post => this.saveBlogPost(post)));
+    return Promise.all(posts.map((post) => this.saveBlogPost(post)));
   }
 
   /**
@@ -195,8 +219,8 @@ class BlogDatabase {
   async getBlogPosts(memberId = null, limit = 10) {
     let query = `
       SELECT bp.*,
-             GROUP_CONCAT(bi.image_url) as images,
-             GROUP_CONCAT(bi.local_path) as local_images
+             GROUP_CONCAT(bi.image_url ORDER BY bi.id) as images,
+             GROUP_CONCAT(COALESCE(bi.local_path, '') ORDER BY bi.id) as local_images
       FROM blog_posts bp
       LEFT JOIN blog_images bi ON bp.id = bi.post_id
     `;
@@ -204,18 +228,18 @@ class BlogDatabase {
     const params = [];
 
     if (memberId) {
-      query += ' WHERE bp.member_id = ?';
+      query += " WHERE bp.member_id = ?";
       params.push(memberId);
     }
 
-    query += ' GROUP BY bp.id';
+    query += " GROUP BY bp.id";
 
     const rows = await this.dbAll(query, params);
 
-    return rows.map(row => ({
+    return rows.map((row) => ({
       ...row,
-      images: row.images ? row.images.split(',') : [],
-      local_images: row.local_images ? row.local_images.split(',').filter(p => p) : []
+      images: row.images ? row.images.split(",") : [],
+      local_images: row.local_images ? row.local_images.split(",") : [],
     }));
   }
 
@@ -227,8 +251,8 @@ class BlogDatabase {
   async searchBlogPosts(keyword) {
     const query = `
       SELECT bp.*,
-             GROUP_CONCAT(bi.image_url) as images,
-             GROUP_CONCAT(bi.local_path) as local_images
+             GROUP_CONCAT(bi.image_url ORDER BY bi.id) as images,
+             GROUP_CONCAT(COALESCE(bi.local_path, '') ORDER BY bi.id) as local_images
       FROM blog_posts bp
       LEFT JOIN blog_images bi ON bp.id = bi.post_id
       WHERE bp.title LIKE ? OR bp.content LIKE ?
@@ -238,10 +262,10 @@ class BlogDatabase {
     const searchTerm = `%${keyword}%`;
     const rows = await this.dbAll(query, [searchTerm, searchTerm]);
 
-    return rows.map(row => ({
+    return rows.map((row) => ({
       ...row,
-      images: row.images ? row.images.split(',') : [],
-      local_images: row.local_images ? row.local_images.split(',').filter(p => p) : []
+      images: row.images ? row.images.split(",") : [],
+      local_images: row.local_images ? row.local_images.split(",") : [],
     }));
   }
 
@@ -252,8 +276,8 @@ class BlogDatabase {
   async getAllBlogPosts() {
     const query = `
       SELECT bp.*,
-             GROUP_CONCAT(bi.image_url) as images,
-             GROUP_CONCAT(bi.local_path) as local_images
+             GROUP_CONCAT(bi.image_url ORDER BY bi.id) as images,
+             GROUP_CONCAT(COALESCE(bi.local_path, '') ORDER BY bi.id) as local_images
       FROM blog_posts bp
       LEFT JOIN blog_images bi ON bp.id = bi.post_id
       GROUP BY bp.id
@@ -262,10 +286,10 @@ class BlogDatabase {
 
     const rows = await this.dbAll(query);
 
-    return rows.map(row => ({
+    return rows.map((row) => ({
       ...row,
-      images: row.images ? row.images.split(',') : [],
-      local_images: row.local_images ? row.local_images.split(',').filter(p => p) : []
+      images: row.images ? row.images.split(",") : [],
+      local_images: row.local_images ? row.local_images.split(",") : [],
     }));
   }
 
@@ -275,7 +299,7 @@ class BlogDatabase {
    * @returns {Promise<Array>} 画像情報の配列
    */
   async getBlogImages(postId) {
-    return this.dbAll('SELECT * FROM blog_images WHERE post_id = ?', [postId]);
+    return this.dbAll("SELECT * FROM blog_images WHERE post_id = ?", [postId]);
   }
 
   /**
@@ -283,32 +307,85 @@ class BlogDatabase {
    * @param {string} postUrl - 投稿URL
    * @param {Array<string>} localImagePaths - ローカル画像パスの配列
    */
-  async updateBlogPostImages(postUrl, localImagePaths) {
+  async updateBlogPostImages(postUrl, imagesOrLocalPaths, maybeLocalPaths) {
     // 投稿IDを取得
-    const row = await this.dbGet('SELECT id FROM blog_posts WHERE url = ?', [postUrl]);
-
+    const row = await this.dbGet("SELECT id FROM blog_posts WHERE url = ?", [
+      postUrl,
+    ]);
     if (!row) {
-      throw new Error('Post not found');
+      throw new Error("Post not found");
     }
-
     const postId = row.id;
 
-    // 既存の画像レコードを取得
+    // オーバーロード判定:
+    // - 新シグネチャ: (postUrl, images: string[], localImagePaths: string[])
+    // - 旧シグネチャ: (postUrl, localImagePaths: string[])
+    const isNewSignature =
+      Array.isArray(imagesOrLocalPaths) && Array.isArray(maybeLocalPaths);
+
+    if (isNewSignature) {
+      const images = imagesOrLocalPaths;
+      const localImagePaths = maybeLocalPaths;
+      if (!images || !localImagePaths) return;
+      // 各 image_url に対して local_path をマップ（存在しなければ行を作成）
+      for (let i = 0; i < images.length; i++) {
+        const imageUrl = images[i];
+        const localPath = localImagePaths[i] || null;
+        if (!imageUrl) continue;
+        // 行がなければ挿入
+        await this.dbRun(
+          "INSERT OR IGNORE INTO blog_images (post_id, image_url, local_path) VALUES (?, ?, ?)",
+          [postId, imageUrl, null]
+        );
+        // local_path を更新
+        await this.dbRun(
+          "UPDATE blog_images SET local_path = ? WHERE post_id = ? AND image_url = ?",
+          [localPath, postId, imageUrl]
+        );
+      }
+      return;
+    }
+
+    // 旧シグネチャ互換: 既存行の順にローカルパスを敷き詰める
+    const localImagePaths = imagesOrLocalPaths || [];
     const imageRows = await this.dbAll(
-      'SELECT * FROM blog_images WHERE post_id = ? ORDER BY id',
+      "SELECT * FROM blog_images WHERE post_id = ? ORDER BY id",
       [postId]
     );
-
-    // ローカルパスを更新
     const updatePromises = imageRows.map((imageRow, index) => {
       const localPath = localImagePaths[index] || null;
-      return this.dbRun(
-        'UPDATE blog_images SET local_path = ? WHERE id = ?',
-        [localPath, imageRow.id]
-      );
+      return this.dbRun("UPDATE blog_images SET local_path = ? WHERE id = ?", [
+        localPath,
+        imageRow.id,
+      ]);
     });
-
     await Promise.all(updatePromises);
+  }
+
+  /**
+   * ブログ投稿の画像ローカルパスを image_url によって更新（推奨）
+   * @param {string} postUrl
+   * @param {Record<string,string>} urlToLocalPath - image_url => local_path の対応マップ
+   */
+  async updateBlogPostImagesByMap(postUrl, urlToLocalPath) {
+    if (!urlToLocalPath || typeof urlToLocalPath !== "object") return;
+    const row = await this.dbGet("SELECT id FROM blog_posts WHERE url = ?", [
+      postUrl,
+    ]);
+    if (!row) throw new Error("Post not found");
+    const postId = row.id;
+    const entries = Object.entries(urlToLocalPath);
+    for (const [imageUrl, localPath] of entries) {
+      if (!imageUrl) continue;
+      await this.dbRun(
+        "INSERT OR IGNORE INTO blog_images (post_id, image_url, local_path) VALUES (?, ?, ?)",
+        [postId, imageUrl, null]
+      );
+      await this.dbRun(
+        "UPDATE blog_images SET local_path = ? WHERE post_id = ? AND image_url = ?",
+        [localPath || null, postId, imageUrl]
+      );
+    }
   }
 
   /**
@@ -319,8 +396,8 @@ class BlogDatabase {
   async getBlogPost(postId) {
     const query = `
       SELECT bp.*,
-             GROUP_CONCAT(bi.image_url) as images,
-             GROUP_CONCAT(bi.local_path) as local_images
+             GROUP_CONCAT(bi.image_url ORDER BY bi.id) as images,
+             GROUP_CONCAT(COALESCE(bi.local_path, '') ORDER BY bi.id) as local_images
       FROM blog_posts bp
       LEFT JOIN blog_images bi ON bp.id = bi.post_id
       WHERE bp.id = ?
@@ -332,8 +409,8 @@ class BlogDatabase {
     if (row) {
       return {
         ...row,
-        images: row.images ? row.images.split(',') : [],
-        local_images: row.local_images ? row.local_images.split(',').filter(p => p) : []
+        images: row.images ? row.images.split(",") : [],
+        local_images: row.local_images ? row.local_images.split(",") : [],
       };
     }
 
@@ -351,72 +428,95 @@ class BlogDatabase {
     return new Promise((resolve, reject) => {
       this.db.serialize(() => {
         // 先に画像情報を取得して、ローカルファイルを削除
-        this.db.all('SELECT local_path FROM blog_images WHERE post_id = ?', [postId], (err, imageRows) => {
-          if (err) {
-            console.error('画像情報取得エラー:', err);
-            reject(err);
-            return;
-          }
-
-          console.log(`画像レコード数: ${imageRows ? imageRows.length : 0}`);
-
-          // ローカル画像ファイルを削除
-          if (imageRows && imageRows.length > 0) {
-            imageRows.forEach((row, index) => {
-              console.log(`\n[画像 ${index + 1}/${imageRows.length}]`);
-              console.log(`  local_path: ${row.local_path}`);
-
-              if (row.local_path) {
-                try {
-                  // 相対パスを絶対パスに変換
-                  const absolutePath = row.local_path.startsWith('/')
-                    ? row.local_path
-                    : path.join(__dirname, row.local_path);
-
-                  console.log(`  絶対パス: ${absolutePath}`);
-                  console.log(`  ファイル存在: ${fs.existsSync(absolutePath)}`);
-
-                  if (fs.existsSync(absolutePath)) {
-                    fs.unlinkSync(absolutePath);
-                    console.log(`  ✓ 画像ファイル削除成功: ${row.local_path}`);
-                  } else {
-                    console.log(`  ✗ ファイルが見つかりません: ${absolutePath}`);
-                  }
-                } catch (fileErr) {
-                  console.error(`  ✗ 画像ファイル削除エラー: ${row.local_path}`, fileErr.message);
-                  // ファイル削除エラーは続行（データベースレコードは削除する）
-                }
-              } else {
-                console.log(`  ✗ local_pathが空です`);
-              }
-            });
-          } else {
-            console.log('削除する画像ファイルはありません');
-          }
-
-          // データベースから画像レコードを削除
-          this.db.run('DELETE FROM blog_images WHERE post_id = ?', [postId], (err) => {
+        this.db.all(
+          "SELECT local_path FROM blog_images WHERE post_id = ?",
+          [postId],
+          (err, imageRows) => {
             if (err) {
-              console.error('画像レコード削除エラー:', err);
+              console.error("画像情報取得エラー:", err);
               reject(err);
               return;
             }
 
-            console.log('✓ データベースから画像レコードを削除');
+            console.log(`画像レコード数: ${imageRows ? imageRows.length : 0}`);
 
-            // ブログ投稿を削除
-            this.db.run('DELETE FROM blog_posts WHERE id = ?', [postId], function(err) {
-              if (err) {
-                console.error('ブログ投稿削除エラー:', err);
-                reject(err);
-              } else {
-                console.log(`✓ ブログ投稿を削除 (変更行数: ${this.changes})`);
-                console.log('=== ブログ削除完了 ===\n');
-                resolve(this.changes);
+            // ローカル画像ファイルを削除
+            if (imageRows && imageRows.length > 0) {
+              imageRows.forEach((row, index) => {
+                console.log(`\n[画像 ${index + 1}/${imageRows.length}]`);
+                console.log(`  local_path: ${row.local_path}`);
+
+                if (row.local_path) {
+                  try {
+                    // 相対パスを絶対パスに変換
+                    const absolutePath = row.local_path.startsWith("/")
+                      ? row.local_path
+                      : path.join(__dirname, row.local_path);
+
+                    console.log(`  絶対パス: ${absolutePath}`);
+                    console.log(
+                      `  ファイル存在: ${fs.existsSync(absolutePath)}`
+                    );
+
+                    if (fs.existsSync(absolutePath)) {
+                      fs.unlinkSync(absolutePath);
+                      console.log(
+                        `  ✓ 画像ファイル削除成功: ${row.local_path}`
+                      );
+                    } else {
+                      console.log(
+                        `  ✗ ファイルが見つかりません: ${absolutePath}`
+                      );
+                    }
+                  } catch (fileErr) {
+                    console.error(
+                      `  ✗ 画像ファイル削除エラー: ${row.local_path}`,
+                      fileErr.message
+                    );
+                    // ファイル削除エラーは続行（データベースレコードは削除する）
+                  }
+                } else {
+                  console.log(`  ✗ local_pathが空です`);
+                }
+              });
+            } else {
+              console.log("削除する画像ファイルはありません");
+            }
+
+            // データベースから画像レコードを削除
+            this.db.run(
+              "DELETE FROM blog_images WHERE post_id = ?",
+              [postId],
+              (err) => {
+                if (err) {
+                  console.error("画像レコード削除エラー:", err);
+                  reject(err);
+                  return;
+                }
+
+                console.log("✓ データベースから画像レコードを削除");
+
+                // ブログ投稿を削除
+                this.db.run(
+                  "DELETE FROM blog_posts WHERE id = ?",
+                  [postId],
+                  function (err) {
+                    if (err) {
+                      console.error("ブログ投稿削除エラー:", err);
+                      reject(err);
+                    } else {
+                      console.log(
+                        `✓ ブログ投稿を削除 (変更行数: ${this.changes})`
+                      );
+                      console.log("=== ブログ削除完了 ===\n");
+                      resolve(this.changes);
+                    }
+                  }
+                );
               }
-            });
-          });
-        });
+            );
+          }
+        );
       });
     });
   }

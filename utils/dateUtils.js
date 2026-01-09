@@ -5,6 +5,7 @@
 
 /**
  * 日付文字列をDateオブジェクトに変換
+ * タイムゾーンの問題を避けるため、ローカル時間で解析
  * @param {string} dateStr - "2024.12.25", "2024/12/25", "2024-12-25" などの形式
  * @returns {Date|null} 解析されたDateオブジェクト、または解析失敗時はnull
  */
@@ -13,13 +14,25 @@ function parseBlogDate(dateStr) {
 
   // "2024.12.25", "2024/12/25", "2024-12-25" を統一的に処理
   const normalized = dateStr.replace(/[\.\/ ]/g, '-');
-  const date = new Date(normalized);
+  const parts = normalized.split('-');
 
-  return isNaN(date.getTime()) ? null : date;
+  if (parts.length === 3) {
+    const year = parseInt(parts[0]);
+    const month = parseInt(parts[1]) - 1; // 月は0ベース
+    const day = parseInt(parts[2]);
+
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+      // ローカル時間で日付を作成（タイムゾーン問題を回避）
+      return new Date(year, month, day);
+    }
+  }
+
+  return null;
 }
 
 /**
  * 日付が範囲内にあるかチェック
+ * タイムゾーンの問題を避けるため、ローカル時間で比較
  * @param {string} dateStr - ブログの日付文字列
  * @param {string|null} dateFrom - 開始日 "YYYY-MM-DD"
  * @param {string|null} dateTo - 終了日 "YYYY-MM-DD"
@@ -30,14 +43,16 @@ function isDateInRange(dateStr, dateFrom, dateTo) {
   if (!postDate) return true; // 日付が不明な場合は含める
 
   if (dateFrom) {
-    const fromDate = new Date(dateFrom);
-    if (postDate < fromDate) return false;
+    const fromDate = parseBlogDate(dateFrom);
+    if (fromDate && postDate < fromDate) return false;
   }
 
   if (dateTo) {
-    const toDate = new Date(dateTo);
-    toDate.setHours(23, 59, 59, 999); // 終了日の23:59:59まで含める
-    if (postDate > toDate) return false;
+    const toDate = parseBlogDate(dateTo);
+    if (toDate) {
+      toDate.setHours(23, 59, 59, 999); // 終了日の23:59:59まで含める
+      if (postDate > toDate) return false;
+    }
   }
 
   return true;

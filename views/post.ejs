@@ -79,32 +79,74 @@
             <%
               let content = post.content || '';
 
-              // 画像URLとローカルパスのマッピングを作成し、環境に応じたURLに置換
-              if (post.images && post.local_images && post.images.length === post.local_images.length) {
+              // Step 1: 画像URLとローカルパスのマッピングを作成
+              const urlToLocalMap = new Map();
+              if (post.images && post.local_images) {
                 for (let i = 0; i < post.images.length; i++) {
                   const imageUrl = post.images[i];
                   const localPath = post.local_images[i];
-
-                  // 環境に応じた画像URLを生成
-                  // localPath: "images/メンバー名_site/post_id_hash.jpg"
-                  // imageBaseUrl: "/images" (local) or "https://cdn.example.com" (S3/CloudFront)
-                  const imageFullUrl = imageBaseUrl + '/' + localPath;
-
-                  // 元のURLを環境に応じたURLに置換
-                  content = content.replace(new RegExp(imageUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), imageFullUrl);
+                  if (imageUrl && localPath && localPath.length > 0) {
+                    urlToLocalMap.set(imageUrl, toImageUrl(localPath));
+                  }
                 }
               }
 
-              // 残りの相対パスを公式サイトのURLに変換
-              content = content.replace(/src="\/([^"]+)"/g, function(match, path) {
-                // すでにimages/で始まるパスは環境に応じたURLに変換済み
-                if (path.startsWith('images/')) {
-                  return 'src="' + imageBaseUrl + '/' + path + '"';
+              // Step 2: data-src属性をsrc属性に変換し、ローカル画像URLに置換
+              // data-src を持つ img タグを処理（lazy loading対応）
+              content = content.replace(/<img\b([^>]*)\bdata-src="([^"]+)"([^>]*)>/gi, function(match, before, dataSrc, after) {
+                // data-srcのURLをローカルパスに変換
+                const localUrl = urlToLocalMap.get(dataSrc) || dataSrc;
+                // srcがすでにあるか確認
+                const hasSrc = /\bsrc=/.test(before + after);
+                if (hasSrc) {
+                  // srcがある場合はdata-srcのみ置換
+                  return '<img' + before + 'data-src="' + localUrl + '"' + after + '>';
+                } else {
+                  // srcがない場合はdata-srcをsrcに変換
+                  return '<img' + before + 'src="' + localUrl + '"' + after + '>';
                 }
+              });
+
+              // Step 3: 通常のsrc属性の画像URLを置換
+              content = content.replace(/<img\b([^>]*)\bsrc="([^"]+)"([^>]*)>/gi, function(match, before, src, after) {
+                // すでにローカルパスに変換済みの場合はスキップ
+                if (src.startsWith('/images/') || src.startsWith('images/')) {
+                  return match;
+                }
+                // マッピングから検索
+                const localUrl = urlToLocalMap.get(src);
+                if (localUrl) {
+                  return '<img' + before + 'src="' + localUrl + '"' + after + '>';
+                }
+                return match;
+              });
+
+              // Step 4: 残りの相対パスを公式サイトのURLに変換
+              content = content.replace(/src="\/([^"]+)"/g, function(match, path) {
+                // images/ で始まる相対パスは toImageUrl で公開URLへ
+                if (path.startsWith('images/')) return 'src="' + toImageUrl(path) + '"';
                 // httpで始まるURLはそのまま
                 if (path.startsWith('http')) return match;
                 // それ以外は公式サイトのURLに変換
                 return 'src="https://sakurazaka46.com/' + path + '"';
+              });
+
+              // Step 5: srcset / data-srcset の置換（レスポンシブ画像対応）
+              content = content.replace(/\b(data-srcset|srcset)="([^"]+)"/g, function(match, attr, value) {
+                // value 例: "url1 1x, url2 2x" または "url1 320w, url2 640w"
+                var parts = value.split(',');
+                var rebuilt = [];
+                for (var i = 0; i < parts.length; i++) {
+                  var part = parts[i].trim();
+                  if (!part) continue;
+                  var spaceIdx = part.lastIndexOf(' ');
+                  var urlOnly = spaceIdx > 0 ? part.substring(0, spaceIdx) : part;
+                  var descriptor = spaceIdx > 0 ? part.substring(spaceIdx + 1) : '';
+                  // マッピングから検索
+                  var localUrl = urlToLocalMap.get(urlOnly) || urlOnly;
+                  rebuilt.push(descriptor ? (localUrl + ' ' + descriptor) : localUrl);
+                }
+                return attr + '="' + rebuilt.join(', ') + '"';
               });
             %>
             <%- content %>

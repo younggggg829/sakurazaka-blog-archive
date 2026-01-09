@@ -288,6 +288,17 @@ lsof -ti:3000 | xargs kill -9 2>/dev/null || true
 node webServer.js
 ```
 
+## 🖼️ 画像 URL の扱い（ローカル/S3 両対応）
+
+- アプリはテンプレートから `toImageUrl()` を使用して画像 URL を生成します。
+  - DB 上の `local_path` は基本的に `images/...`（先頭スラッシュなし）で保存されます。
+  - `toImageUrl('images/...')` はローカル運用時に `/images/...`（静的配信）へ正規化します。
+  - 絶対 URL（`http(s)://...`）はそのまま返します。
+- サーバ設定:
+  - 環境変数 `STORAGE_TYPE=local`（デフォルト）では `GET /images/*` をローカルの `images/` ディレクトリにマッピングします。
+  - 将来 S3/CDN へ切り替える場合は、`STORAGE_TYPE=s3` と `S3_BASE_URL` を設定してください（例: `https://cdn.example.com`）。`toImageUrl` が `S3_BASE_URL` をベースに公開 URL を生成します。
+- 詳細ページの本文中に含まれるオリジナル画像 URL は、保存済みのローカル画像があれば自動で置換され、`toImageUrl(local_path)` で解決されます。
+
 ## 📌 バージョン情報
 
 ### **Current Version: v1.1.0**

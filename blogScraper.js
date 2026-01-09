@@ -90,27 +90,22 @@ async function collectAllPostUrls(page, memberId, memberName, limit = null, date
 
     allPosts.push(...filteredPosts);
 
-    // 日付範囲指定がある場合の終了条件チェック
-    if (dateFrom || dateTo) {
-      // 範囲より古い記事に達したかチェック
-      if (dateFrom) {
-        const oldestPostOnPage = pageResult.posts[pageResult.posts.length - 1];
-        const oldestDate = parseBlogDate(oldestPostOnPage?.date);
-        const fromDate = new Date(dateFrom);
+    // 終了条件チェック
+    if (dateFrom) {
+      // 日付範囲の開始日が指定されている場合：
+      // 指定期間より古い記事に達するまで全ページを収集し続ける
+      const oldestPostOnPage = pageResult.posts[pageResult.posts.length - 1];
+      const oldestDate = parseBlogDate(oldestPostOnPage?.date);
+      const fromDate = new Date(dateFrom);
 
-        // ページの最も古い記事が開始日より前なら、これ以降のページは不要
-        if (oldestDate && oldestDate < fromDate) {
-          console.log(`  ℹ️  指定期間より古い記事に到達しました（最古: ${oldestPostOnPage.date}）`);
-          break;
-        }
-      }
-
-      // limit指定時、必要件数に達したら終了
-      if (!needAll && allPosts.length >= limit) {
+      // ページの最も古い記事が開始日より前なら、これ以降のページは不要
+      if (oldestDate && oldestDate < fromDate) {
+        console.log(`  ℹ️  指定期間より古い記事に到達しました（最古: ${oldestPostOnPage.date}）`);
         break;
       }
+      // dateFromが指定されている場合はlimitに関係なく指定範囲の記事をすべて収集
     } else {
-      // 日付範囲指定なしの場合、limit指定時に必要件数に達したら即座に終了
+      // 日付範囲指定なしの場合、limit指定時に必要件数に達したら終了
       if (!needAll && allPosts.length >= limit) {
         break;
       }
@@ -155,7 +150,11 @@ async function scrapeBlogPosts(memberId, memberName, limit = 10, options = {}) {
 
     // 全投稿URLを収集（ページネーション対応）
     const allPosts = await collectAllPostUrls(page, memberId, memberName, targetLimit, dateFrom, dateTo);
-    const postsToProcess = isAll ? allPosts : allPosts.slice(0, limit);
+
+    // 日付範囲が指定されている場合は収集した全記事を処理
+    // そうでなければlimit件数で制限
+    const hasDateRange = dateFrom || dateTo;
+    const postsToProcess = (isAll || hasDateRange) ? allPosts : allPosts.slice(0, limit);
 
     console.log(`  📊 ${postsToProcess.length}件の投稿を処理します`);
 
